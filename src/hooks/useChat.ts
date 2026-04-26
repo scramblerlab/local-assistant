@@ -1,8 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { chatStream } from "../services/ollama";
 import { parseStreamChunk } from "../services/streamParser";
 import { splitFinalSegment } from "../utils/responseParser";
-import { saveHistory } from "../services/history";
+import { saveSession } from "../services/sessions";
 import { webSearch, webFetch } from "../services/webTools";
 import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
@@ -52,6 +52,7 @@ function buildSystemPrompt(activeSkills: ReturnType<typeof useSkillStore.getStat
 }
 
 const MAX_TOOL_ROUNDS = 8;
+const TOOL_TIMEOUT_MS = 15_000;
 
 async function executeTool(name: string, args: Record<string, string>): Promise<string> {
   if (name === "web_search") {
@@ -81,10 +82,15 @@ export function useChat(model: string) {
   const { buildMessages, runCompact, maybeAutoCompact } = useContextManager(model);
 
   const [isCompacting, setIsCompacting] = useState(false);
+  const sendingRef = useRef(false);
 
   const sendMessage = useCallback(
     async (text: string) => {
       if (!text.trim() || !model) return;
+      if (sendingRef.current) return;
+      sendingRef.current = true;
+
+      try {
 
       // ── /compact command ──────────────────────────────────────────────
       if (text.trim() === "/compact") {
@@ -145,7 +151,12 @@ export function useChat(model: string) {
             addSegment(tId, "tool-use", toolKey);
             let result: string;
             try {
-              result = await executeTool(toolCall.name, toolCall.args);
+              result = await Promise.race([
+                executeTool(toolCall.name, toolCall.args),
+                new Promise<string>((_, reject) =>
+                  setTimeout(() => reject(new Error("Timed out")), TOOL_TIMEOUT_MS)
+                ),
+              ]);
             } catch (err) {
               result = `Error: ${(err as Error).message}`;
             }
@@ -181,12 +192,33 @@ export function useChat(model: string) {
         }
       }
 
+      // Mark any tool-use pills that never received a "done:" counterpart
+      const preFinalTurn = useChatStore.getState().turns.find((t) => t.id === tId);
+      if (preFinalTurn) {
+        const pills = preFinalTurn.segments.filter((s) => s.kind === "tool-use");
+        const doneKeys = new Set(pills.filter((s) => s.content.startsWith("done:")).map((s) => s.content.slice(5)));
+        pills.filter((s) => !s.content.startsWith("done:") && !doneKeys.has(s.content))
+          .forEach((s) => addSegment(tId, "tool-use", `done:${s.content}`));
+      }
+
       finalizeTurn(tId);
       setAbortController(null);
 
       const state = useChatStore.getState();
-      await saveHistory(state.turns, state.compactSummary);
+      await saveSession({
+        id: state.currentSessionId,
+        title: "New chat",
+        createdAt: state.currentSessionCreatedAt,
+        updatedAt: Date.now(),
+        turnCount: 0,
+        turns: state.turns,
+        compactSummary: state.compactSummary,
+      });
       await maybeAutoCompact(systemPrompt);
+
+      } finally {
+        sendingRef.current = false;
+      }
     },
     [
       model,

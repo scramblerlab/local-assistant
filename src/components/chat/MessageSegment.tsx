@@ -52,18 +52,20 @@ export function MessageSegment({ segment }: Props) {
     const arg = colonIdx >= 0 ? body.slice(colonIdx + 1) : "";
     const isSearch = toolName === "web_search";
     const Icon = isSearch ? Search : Globe;
-    const label = isSearch ? `Searching: ${arg}` : `Fetching: ${arg}`;
+    const label = isDone
+      ? (isSearch ? `Searched: ${arg}` : `Fetched: ${arg}`)
+      : (isSearch ? `Searching: ${arg}` : `Fetching: ${arg}`);
     return (
       <div style={{
         display: "inline-flex", alignItems: "center", gap: 6,
         padding: "4px 10px", marginBottom: 4,
-        background: "var(--color-accent-dim)",
-        border: "1.5px solid var(--color-accent)",
+        background: isDone ? "rgba(180,83,9,0.12)" : "var(--color-accent-dim)",
+        border: `1.5px solid ${isDone ? "#b45309" : "var(--color-accent)"}`,
         borderRadius: "var(--radius-pill)",
-        fontSize: 11, color: "var(--color-accent)",
+        fontSize: 11,
+        color: isDone ? "#b45309" : "var(--color-accent)",
         fontWeight: 600, letterSpacing: "0.5px",
         animation: isDone ? undefined : "dot-pulse 1.4s ease-in-out infinite",
-        opacity: isDone ? 0.6 : 1,
       }}>
         <Icon size={11} />
         {label}

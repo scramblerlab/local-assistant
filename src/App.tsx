@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppShell } from "./components/layout/AppShell";
 import { useOllamaHealth } from "./hooks/useOllamaHealth";
 import { useChatStore } from "./stores/chatStore";
-import { loadHistory } from "./services/history";
+import { initSessions } from "./services/sessions";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 5_000 } },
@@ -11,15 +11,13 @@ const queryClient = new QueryClient({
 
 function AppInner() {
   const { status, retry, startOllama } = useOllamaHealth();
-  const setHistory = useChatStore((s) => s.setHistory);
+  const setCurrentSession = useChatStore((s) => s.setCurrentSession);
 
   useEffect(() => {
-    loadHistory().then(({ turns, compactSummary }) => {
-      if (turns.length > 0 || compactSummary) {
-        setHistory(turns, compactSummary);
-      }
+    initSessions().then((session) => {
+      setCurrentSession(session.id, session.createdAt, session.turns, session.compactSummary);
     });
-  }, [setHistory]);
+  }, [setCurrentSession]);
 
   return <AppShell ollamaStatus={status} onRetry={retry} onStart={startOllama} />;
 }

@@ -97,9 +97,16 @@ export function ResponseGroup({ turn }: Props) {
 
           {!collapsed && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              {turn.segments.map((seg) => (
-                <MessageSegment key={seg.id} segment={seg} />
-              ))}
+              {(() => {
+                const doneKeys = new Set(
+                  turn.segments
+                    .filter((s) => s.kind === "tool-use" && s.content.startsWith("done:"))
+                    .map((s) => s.content.slice(5))
+                );
+                return turn.segments
+                  .filter((s) => !(s.kind === "tool-use" && !s.content.startsWith("done:") && doneKeys.has(s.content)))
+                  .map((seg) => <MessageSegment key={seg.id} segment={seg} />);
+              })()}
               {turn.isStreaming && turn.segments.length === 0 && (
                 <span style={{ fontSize: 13, color: "var(--color-text-muted)", fontStyle: "italic" }}>
                   Thinking…
