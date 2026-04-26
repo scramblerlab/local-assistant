@@ -24,9 +24,14 @@ export async function loadHistory(): Promise<PersistedHistory> {
   try {
     const raw = await invoke<string>("read_file", { path: HISTORY_PATH });
     const parsed = JSON.parse(raw) as PersistedHistory;
-    // Sanitise: ensure no stale streaming state survives a restart
+    // Reassign all IDs so loaded history never collides with new segments
     return {
-      turns: (parsed.turns ?? []).map((t) => ({ ...t, isStreaming: false })),
+      turns: (parsed.turns ?? []).map((t) => ({
+        ...t,
+        id: crypto.randomUUID(),
+        isStreaming: false,
+        segments: (t.segments ?? []).map((s) => ({ ...s, id: crypto.randomUUID() })),
+      })),
       compactSummary: parsed.compactSummary ?? null,
     };
   } catch {

@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{fs_ops, ollama_check, skills};
+use commands::{fs_ops, ollama_check, skills, web};
 use tauri::Manager;
 use std::path::PathBuf;
 
@@ -57,6 +57,8 @@ pub fn run() {
             ollama_check::check_ollama_installed,
             ollama_check::start_ollama_server,
             ollama_check::open_ollama_download,
+            web::web_search,
+            web::web_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
