@@ -4,6 +4,11 @@ import type { SkillMeta } from "../types/skill";
 import { useSkillStore } from "../stores/skillStore";
 import { parseSkillContent } from "../utils/skillLoader";
 
+export async function refreshSkills() {
+  const skills = await invoke<SkillMeta[]>("list_skills");
+  useSkillStore.getState().setAvailable(skills);
+}
+
 export function useSkills() {
   const { available, active, setAvailable, activateSkill, deactivateSkill, isActive } = useSkillStore();
 

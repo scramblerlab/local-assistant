@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { refreshSkills } from "./useSkills";
 import { chatStream } from "../services/ollama";
 import { parseStreamChunk } from "../services/streamParser";
 import { splitFinalSegment } from "../utils/responseParser";
@@ -10,6 +12,7 @@ import { useSkillStore } from "../stores/skillStore";
 import { useContextManager } from "./useContextManager";
 import type { ChatMessage } from "../types/ollama";
 import type { MessageSegment } from "../types/chat";
+import type { SkillMeta } from "../types/skill";
 
 const BASE_SYSTEM_PROMPT = `You are a helpful local AI assistant. Be concise and precise.
 
@@ -25,6 +28,14 @@ Emit ONLY the tag below (nothing else on that line). The app will execute it and
 
 <tool_call>{"name": "web_fetch", "args": {"url": "https://example.com/page"}}</tool_call>
 
+<tool_call>{"name": "read_file", "args": {"path": "~/some/file.txt"}}</tool_call>
+
+<tool_call>{"name": "list_dir", "args": {"path": "~/.local-assistant/skills"}}</tool_call>
+
+<write_file path="~/.local-assistant/skills/my-skill/SKILL.md">
+file content goes here — no escaping needed
+</write_file>
+
 ### Example — user asks for today's news
 
 User: What's in the news today?
@@ -38,17 +49,36 @@ Here are today's top stories: …
 ### Rules
 - Always use web_search for anything about current events, today's date, latest versions, live data.
 - Use web_fetch when the user gives you a URL or when a search result URL looks helpful.
+- Use write_file tags (NOT tool_call) to save files. The content goes between the tags — no JSON escaping needed. Paths starting with ~ resolve to the home directory.
+- Use read_file to read any local file. Use list_dir to list directory contents.
 - After receiving a tool result, continue your answer naturally — do not repeat the tag.
 - You may call multiple tools per answer, one tag at a time.
-- Never claim you cannot access the internet.`;
+- Never claim you cannot access the internet or the local filesystem.`;
 
-function buildSystemPrompt(activeSkills: ReturnType<typeof useSkillStore.getState>["active"]): string {
-  const skills = Array.from(activeSkills.values());
-  if (skills.length === 0) return BASE_SYSTEM_PROMPT;
-  const block = skills
-    .map((s) => `## Skill: ${s.frontmatter.name}\n\n${s.body}`)
-    .join("\n\n---\n\n");
-  return `${BASE_SYSTEM_PROMPT}\n\n# Active Skills\n\n${block}`;
+function buildSystemPrompt(
+  availableSkills: SkillMeta[],
+  activeSkills: ReturnType<typeof useSkillStore.getState>["active"]
+): string {
+  let prompt = BASE_SYSTEM_PROMPT;
+
+  // Always tell the LLM which skills are installed, even if none are active
+  if (availableSkills.length > 0) {
+    const catalog = availableSkills
+      .map((s) => `- **${s.name}**: ${s.description}`)
+      .join("\n");
+    prompt += `\n\n# Available Skills\nThe following skills are installed in this assistant. When a user's request matches a skill, mention it by name and let them know they can activate it in the sidebar to unlock full instructions.\n${catalog}`;
+  }
+
+  // Inject full instructions for skills the user has toggled on
+  const active = Array.from(activeSkills.values());
+  if (active.length > 0) {
+    const block = active
+      .map((s) => `## ${s.frontmatter.name}\n\n${s.body}`)
+      .join("\n\n---\n\n");
+    prompt += `\n\n# Active Skills (full instructions loaded)\n\n${block}`;
+  }
+
+  return prompt;
 }
 
 const MAX_TOOL_ROUNDS = 8;
@@ -64,6 +94,19 @@ async function executeTool(name: string, args: Record<string, string>): Promise<
   if (name === "web_fetch") {
     return webFetch(args.url ?? "");
   }
+  if (name === "write_file") {
+    const path = args.path ?? "";
+    await invoke("write_file", { path, content: args.content ?? "" });
+    if (path.includes(".local-assistant/skills")) refreshSkills().catch(console.error);
+    return `File written to ${path}`;
+  }
+  if (name === "read_file") {
+    return await invoke<string>("read_file", { path: args.path ?? "" });
+  }
+  if (name === "list_dir") {
+    const entries = await invoke<string[]>("list_dir", { path: args.path ?? "" });
+    return entries.join("\n");
+  }
   return `Unknown tool: ${name}`;
 }
 
@@ -78,7 +121,7 @@ export function useChat(model: string) {
     setAbortController,
     abortController,
   } = useChatStore();
-  const { active: activeSkills } = useSkillStore();
+  const { active: activeSkills, available: availableSkills } = useSkillStore();
   const { buildMessages, runCompact, maybeAutoCompact } = useContextManager(model);
 
   const [isCompacting, setIsCompacting] = useState(false);
@@ -107,7 +150,7 @@ export function useChat(model: string) {
       }
 
       // ── Normal message ─────────────────────────────────────────────────
-      const systemPrompt = buildSystemPrompt(activeSkills);
+      const systemPrompt = buildSystemPrompt(availableSkills, activeSkills);
       const messages = await buildMessages(systemPrompt, text);
 
       const tId = addTurn(text, model);
@@ -133,7 +176,7 @@ export function useChat(model: string) {
           }
 
           const toolCalls = extractToolCalls(responseText);
-          if (toolCalls.length === 0) break; // no tool calls — done
+          if (toolCalls.length === 0) break;
 
           // Clean preamble text (everything before the first <tool_call>)
           const preamble = stripToolCalls(responseText);
