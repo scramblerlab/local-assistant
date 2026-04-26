@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import type { MessageSegment, SegmentKind, Turn } from "../types/chat";
 
-let turnIdSeq = 0;
-let segIdSeq = 0;
+const uid = () => crypto.randomUUID();
 
 interface ChatState {
   turns: Turn[];
@@ -12,6 +11,8 @@ interface ChatState {
   // Turn lifecycle
   addTurn: (userMessage: string, model: string) => string;
   appendToSegment: (turnId: string, kind: SegmentKind, delta: string) => void;
+  addSegment: (turnId: string, kind: SegmentKind, content: string) => void;
+  replaceSegmentsFrom: (turnId: string, fromIndex: number, segments: MessageSegment[]) => void;
   replaceLastSegments: (turnId: string, segments: MessageSegment[]) => void;
   finalizeTurn: (turnId: string) => void;
 
@@ -32,7 +33,7 @@ export const useChatStore = create<ChatState>((set) => ({
   abortController: null,
 
   addTurn: (userMessage, model) => {
-    const id = `turn-${++turnIdSeq}`;
+    const id = uid();
     set((s) => ({
       turns: [...s.turns, { id, userMessage, segments: [], isStreaming: true, timestamp: Date.now(), model }],
     }));
@@ -48,9 +49,27 @@ export const useChatStore = create<ChatState>((set) => ({
         if (last && last.kind === kind) {
           segs[segs.length - 1] = { ...last, content: last.content + delta };
         } else {
-          segs.push({ id: `seg-${++segIdSeq}`, kind, content: delta });
+          segs.push({ id: uid(), kind, content: delta });
         }
         return { ...t, segments: segs };
+      }),
+    }));
+  },
+
+  addSegment: (tId, kind, content) => {
+    set((s) => ({
+      turns: s.turns.map((t) => {
+        if (t.id !== tId) return t;
+        return { ...t, segments: [...t.segments, { id: uid(), kind, content }] };
+      }),
+    }));
+  },
+
+  replaceSegmentsFrom: (tId, fromIndex, newSegments) => {
+    set((s) => ({
+      turns: s.turns.map((t) => {
+        if (t.id !== tId) return t;
+        return { ...t, segments: [...t.segments.slice(0, fromIndex), ...newSegments] };
       }),
     }));
   },
@@ -78,7 +97,7 @@ export const useChatStore = create<ChatState>((set) => ({
       const realTurns = s.turns.filter((t) => !t.isCompact && !t.isStreaming);
       const kept = realTurns.slice(-keepRecentCount);
       const divider: Turn = {
-        id: `turn-${++turnIdSeq}`,
+        id: uid(),
         userMessage: "",
         segments: [],
         isStreaming: false,

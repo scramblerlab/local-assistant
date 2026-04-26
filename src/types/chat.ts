@@ -1,4 +1,4 @@
-export type SegmentKind = "thinking" | "final" | "quoted";
+export type SegmentKind = "thinking" | "final" | "quoted" | "tool-use";
 
 export interface MessageSegment {
   id: string;
