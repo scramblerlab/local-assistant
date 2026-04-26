@@ -58,7 +58,6 @@ export async function* chatStream(
   messages: ChatMessage[],
   signal?: AbortSignal
 ): AsyncGenerator<OllamaStreamChunk> {
-  console.log("[chat] sending to ollama →", { model, messages });
   const res = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
