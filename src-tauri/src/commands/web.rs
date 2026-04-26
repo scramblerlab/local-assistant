@@ -1,59 +1,115 @@
 use scraper::{Html, Selector};
 
+const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 fn make_client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
-        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(10))
+        .user_agent(UA)
+        .timeout(std::time::Duration::from_secs(12))
+        .gzip(true)
+        .deflate(true)
+        .cookie_store(true)
         .build()
         .map_err(|e| e.to_string())
 }
 
-/// Search the web using DuckDuckGo HTML and return top results.
-#[tauri::command]
-pub fn web_search(query: String) -> Result<Vec<serde_json::Value>, String> {
-    let client = make_client()?;
+/// Scrape Bing search results (primary — most permissive bot access).
+fn search_bing(client: &reqwest::blocking::Client, query: &str) -> Vec<serde_json::Value> {
     let url = format!(
-        "https://html.duckduckgo.com/html/?q={}",
-        urlencoding::encode(&query)
+        "https://www.bing.com/search?q={}&setlang=ja",
+        urlencoding::encode(query)
     );
-    let body = client
+    let body = match client
         .get(&url)
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .header("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
         .send()
-        .map_err(|e| e.to_string())?
-        .text()
-        .map_err(|e| e.to_string())?;
+        .and_then(|r| r.text())
+    {
+        Ok(b) => b,
+        Err(e) => { eprintln!("[web_search/bing] request failed: {e}"); return vec![]; }
+    };
+    eprintln!("[web_search/bing] body_len={}", body.len());
 
     let document = Html::parse_document(&body);
-    let result_sel = Selector::parse(".result__body").unwrap();
-    let title_sel = Selector::parse(".result__a").unwrap();
-    let snippet_sel = Selector::parse(".result__snippet").unwrap();
-    let url_sel = Selector::parse(".result__url").unwrap();
+    let algo_sel = match Selector::parse("#b_results li.b_algo") { Ok(s) => s, Err(_) => return vec![] };
+    let title_sel = match Selector::parse("h2 a") { Ok(s) => s, Err(_) => return vec![] };
+    let snip_sel = match Selector::parse(".b_caption p, .b_algoSlug") { Ok(s) => s, Err(_) => return vec![] };
 
     let mut results = Vec::new();
-    for node in document.select(&result_sel).take(5) {
-        let title = node
-            .select(&title_sel)
-            .next()
-            .map(|n| n.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        let snippet = node
-            .select(&snippet_sel)
-            .next()
-            .map(|n| n.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        let href = node
-            .select(&url_sel)
-            .next()
+    for node in document.select(&algo_sel).take(5) {
+        let title_node = node.select(&title_sel).next();
+        let title = title_node
             .map(|n| n.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
         if title.is_empty() { continue; }
-        results.push(serde_json::json!({
-            "title": title,
-            "url": href,
-            "snippet": snippet,
-        }));
+        let href = title_node
+            .and_then(|n| n.value().attr("href"))
+            .unwrap_or_default().to_string();
+        let snippet = node.select(&snip_sel).next()
+            .map(|n| n.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        results.push(serde_json::json!({"title": title, "url": href, "snippet": snippet}));
     }
-    Ok(results)
+    eprintln!("[web_search/bing] {} results", results.len());
+    results
+}
+
+/// DuckDuckGo HTML via POST (required — GET is blocked as bot traffic).
+fn search_ddg(client: &reqwest::blocking::Client, query: &str) -> Vec<serde_json::Value> {
+    let form = format!("q={}&b=&kl=&df=", urlencoding::encode(query));
+    let body = match client
+        .post("https://html.duckduckgo.com/html")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .header("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
+        .header("Referer", "https://duckduckgo.com/")
+        .body(form)
+        .send()
+        .and_then(|r| r.text())
+    {
+        Ok(b) => b,
+        Err(e) => { eprintln!("[web_search/ddg] request failed: {e}"); return vec![]; }
+    };
+    eprintln!("[web_search/ddg] body_len={}", body.len());
+
+    let document = Html::parse_document(&body);
+    let result_sel = match Selector::parse(".result__body") { Ok(s) => s, Err(_) => return vec![] };
+    let title_sel = match Selector::parse(".result__a") { Ok(s) => s, Err(_) => return vec![] };
+    let snip_sel = match Selector::parse(".result__snippet") { Ok(s) => s, Err(_) => return vec![] };
+
+    let mut results = Vec::new();
+    for node in document.select(&result_sel).take(5) {
+        let title_node = node.select(&title_sel).next();
+        let title = title_node
+            .map(|n| n.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        if title.is_empty() { continue; }
+        let href = title_node
+            .and_then(|n| n.value().attr("href"))
+            .unwrap_or_default().to_string();
+        let snippet = node.select(&snip_sel).next()
+            .map(|n| n.text().collect::<String>().trim().to_string())
+            .unwrap_or_default();
+        results.push(serde_json::json!({"title": title, "url": href, "snippet": snippet}));
+    }
+    eprintln!("[web_search/ddg] {} results", results.len());
+    results
+}
+
+/// Search the web and return top 5 results.
+#[tauri::command]
+pub fn web_search(query: String) -> Result<Vec<serde_json::Value>, String> {
+    let client = make_client()?;
+
+    let results = search_ddg(&client, &query);
+    if !results.is_empty() { return Ok(results); }
+
+    let results = search_bing(&client, &query);
+    if !results.is_empty() { return Ok(results); }
+
+    eprintln!("[web_search] all strategies exhausted for query={:?}", query);
+    Ok(vec![])
 }
 
 /// Fetch a URL and return its text content with HTML stripped.

@@ -4,7 +4,7 @@ import { getModelContextLength } from "../services/ollama";
 import { parseStreamChunk } from "../services/streamParser";
 import { estimateMessageTokens } from "../utils/tokenEstimate";
 import { useChatStore } from "../stores/chatStore";
-import { saveHistory } from "../services/history";
+import { saveSession } from "../services/sessions";
 import type { ChatMessage } from "../types/ollama";
 import type { Turn } from "../types/chat";
 
@@ -40,7 +40,7 @@ export function useContextManager(model: string) {
       for (let i = realTurns.length - 1; i >= 0; i--) {
         const t = realTurns[i];
         const assistantText = t.segments
-          .filter((s) => s.kind !== "thinking")
+          .filter((s) => s.kind === "final" || s.kind === "quoted")
           .map((s) => s.content)
           .join("");
         const cost =
@@ -57,7 +57,7 @@ export function useContextManager(model: string) {
         messages.push({
           role: "assistant",
           content: t.segments
-            .filter((s) => s.kind !== "thinking")
+            .filter((s) => s.kind === "final" || s.kind === "quoted")
             .map((s) => s.content)
             .join(""),
         });
@@ -133,8 +133,16 @@ export function useContextManager(model: string) {
       applyCompact(summary, KEEP_AFTER_COMPACT);
 
       // Persist after compact
-      const nextTurns = useChatStore.getState().turns;
-      await saveHistory(nextTurns, summary);
+      const state = useChatStore.getState();
+      await saveSession({
+        id: state.currentSessionId,
+        title: "New chat",
+        createdAt: state.currentSessionCreatedAt,
+        updatedAt: Date.now(),
+        turnCount: 0,
+        turns: state.turns,
+        compactSummary: summary,
+      });
 
       return summary;
     },

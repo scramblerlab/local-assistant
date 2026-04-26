@@ -7,6 +7,8 @@ interface ChatState {
   turns: Turn[];
   compactSummary: string | null;
   abortController: AbortController | null;
+  currentSessionId: string;
+  currentSessionCreatedAt: number;
 
   // Turn lifecycle
   addTurn: (userMessage: string, model: string) => string;
@@ -20,7 +22,10 @@ interface ChatState {
   setCompactSummary: (summary: string) => void;
   applyCompact: (summary: string, keepRecentCount: number) => void;
 
-  // Persistence bootstrap
+  // Session management
+  setCurrentSession: (id: string, createdAt: number, turns: Turn[], compactSummary: string | null) => void;
+
+  // Persistence bootstrap (legacy — kept for migration path)
   setHistory: (turns: Turn[], compactSummary: string | null) => void;
 
   setAbortController: (ac: AbortController | null) => void;
@@ -31,6 +36,8 @@ export const useChatStore = create<ChatState>((set) => ({
   turns: [],
   compactSummary: null,
   abortController: null,
+  currentSessionId: "",
+  currentSessionCreatedAt: 0,
 
   addTurn: (userMessage, model) => {
     const id = uid();
@@ -60,7 +67,13 @@ export const useChatStore = create<ChatState>((set) => ({
     set((s) => ({
       turns: s.turns.map((t) => {
         if (t.id !== tId) return t;
-        return { ...t, segments: [...t.segments, { id: uid(), kind, content }] };
+        let segs = t.segments;
+        // When marking a tool-use done, remove the matching active pill first
+        if (kind === "tool-use" && content.startsWith("done:")) {
+          const activeKey = content.slice(5);
+          segs = segs.filter((seg) => !(seg.kind === "tool-use" && seg.content === activeKey));
+        }
+        return { ...t, segments: [...segs, { id: uid(), kind, content }] };
       }),
     }));
   },
@@ -108,6 +121,8 @@ export const useChatStore = create<ChatState>((set) => ({
       return { turns: [divider, ...kept], compactSummary: summary };
     });
   },
+
+  setCurrentSession: (id, createdAt, turns, compactSummary) => set({ currentSessionId: id, currentSessionCreatedAt: createdAt, turns, compactSummary }),
 
   setHistory: (turns, compactSummary) => set({ turns, compactSummary }),
 
