@@ -57,6 +57,7 @@ pub fn run() {
             ollama_check::check_ollama_installed,
             ollama_check::start_ollama_server,
             ollama_check::open_ollama_download,
+            ollama_check::upgrade_ollama,
             web::web_search,
             web::web_fetch,
         ])

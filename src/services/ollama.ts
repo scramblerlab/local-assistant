@@ -104,7 +104,9 @@ export async function* pullStream(
   });
 
   if (!res.ok || !res.body) {
-    throw new Error(`Pull error: ${res.status} ${res.statusText}`);
+    const body = res.body ? await res.text() : "";
+    console.error("[pullStream] HTTP error", res.status, body);
+    throw new Error(`Pull error ${res.status}: ${body || res.statusText}`);
   }
 
   const reader = res.body.getReader();
