@@ -40,6 +40,7 @@ export interface OllamaStreamChunk {
 
 export interface OllamaPullChunk {
   status: string;
+  error?: string;
   digest?: string;
   total?: number;
   completed?: number;
