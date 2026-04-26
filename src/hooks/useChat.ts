@@ -16,44 +16,30 @@ import type { SkillMeta } from "../types/skill";
 
 const BASE_SYSTEM_PROMPT = `You are a helpful local AI assistant. Be concise and precise.
 
-## Web Tools
+## Web & File Tools
 
-You have two tools available. Use them whenever you need current or live information — news, weather, prices, recent events, specific webpages, etc. Do NOT say you cannot search the internet; instead, use the tools.
+You have tools available. Emit ONLY the tag below on its own line — the app executes it and returns the result.
 
-### How to call a tool
-
-Emit ONLY the tag below (nothing else on that line). The app will execute it and return the result.
-
-<tool_call>{"name": "web_search", "args": {"query": "search terms here"}}</tool_call>
-
+### Fetch a URL
 <tool_call>{"name": "web_fetch", "args": {"url": "https://example.com/page"}}</tool_call>
 
-<tool_call>{"name": "read_file", "args": {"path": "~/some/file.txt"}}</tool_call>
-
-<tool_call>{"name": "list_dir", "args": {"path": "~/.local-assistant/skills"}}</tool_call>
-
+### Write a file
 <write_file path="~/.local-assistant/skills/my-skill/SKILL.md">
 file content goes here — no escaping needed
 </write_file>
 
-### Example — user asks for today's news
-
-User: What's in the news today?
-Assistant:
-<tool_call>{"name": "web_search", "args": {"query": "top news today ${new Date().toISOString().slice(0,10)}"}}</tool_call>
-
-(tool result arrives)
-
-Here are today's top stories: …
+### Read a file / list a directory
+<tool_call>{"name": "read_file", "args": {"path": "~/some/file.txt"}}</tool_call>
+<tool_call>{"name": "list_dir", "args": {"path": "~/.local-assistant/skills"}}</tool_call>
 
 ### Rules
-- Always use web_search for anything about current events, today's date, latest versions, live data.
-- Use web_fetch when the user gives you a URL or when a search result URL looks helpful.
-- Use write_file tags (NOT tool_call) to save files. The content goes between the tags — no JSON escaping needed. Paths starting with ~ resolve to the home directory.
-- Use read_file to read any local file. Use list_dir to list directory contents.
-- After receiving a tool result, continue your answer naturally — do not repeat the tag.
-- You may call multiple tools per answer, one tag at a time.
-- Never claim you cannot access the internet or the local filesystem.`;
+- You CANNOT search the internet. If the user asks for current information (news, weather, prices),
+  tell them you can fetch a specific URL if they provide one, then use web_fetch on that URL.
+- Use web_fetch for any URL the user gives you, or URLs you know with certainty (RSS feeds, Wikipedia, GitHub, etc.).
+- Use write_file tags (not tool_call) to save files; content goes between the tags, no JSON escaping.
+- Use read_file to read local files. Use list_dir to list directory contents.
+- After receiving a tool result, continue naturally — do not repeat the tag.
+- You may call multiple tools per answer, one tag at a time.`;
 
 function buildSystemPrompt(
   availableSkills: SkillMeta[],
@@ -64,7 +50,7 @@ function buildSystemPrompt(
   // Always tell the LLM which skills are installed, even if none are active
   if (availableSkills.length > 0) {
     const catalog = availableSkills
-      .map((s) => `- **${s.name}**: ${s.description}`)
+      .map((s) => `- **${s.name}** (path: \`${s.path}\`): ${s.description}`)
       .join("\n");
     prompt += `\n\n# Available Skills\nThe following skills are installed in this assistant. When a user's request matches a skill, mention it by name and let them know they can activate it in the sidebar to unlock full instructions.\n${catalog}`;
   }
@@ -201,7 +187,7 @@ export function useChat(model: string) {
                 ),
               ]);
             } catch (err) {
-              result = `Error: ${(err as Error).message}`;
+              result = `Error: ${err instanceof Error ? err.message : String(err)}`;
             }
             addSegment(tId, "tool-use", `done:${toolKey}`);
             toolResults.push(`[${toolCall.name}]\n${result}`);
