@@ -28,10 +28,10 @@ A standalone Mac desktop AI assistant that runs entirely locally using [Ollama](
 
 ```bash
 # Install dependencies
-npm install
+pnpm install
 
 # Run in dev mode (hot-reload)
-npm run tauri dev
+pnpm tauri dev
 ```
 
 > First run compiles the Rust backend (~2–3 min). Subsequent starts are fast.
@@ -39,9 +39,23 @@ npm run tauri dev
 ### Production build
 
 ```bash
-npm run tauri build -- --target universal-apple-darwin
+pnpm tauri build -- --target universal-apple-darwin
 # Output: src-tauri/target/universal-apple-darwin/release/bundle/macos/Local Assistant.app
 ```
+
+## Web Search
+
+The assistant can search the web using the `web_search` tool. By default it falls back to scraping DuckDuckGo and Bing, but for reliable results configure a [Brave Search API](https://brave.com/search/api/) key (free tier: 2,000 queries/month).
+
+Create `~/.local-assistant/config.json`:
+
+```json
+{
+  "brave_search_api_key": "YOUR_KEY_HERE"
+}
+```
+
+When this key is present, Brave Search is used first. The scraper fallbacks remain active if the key is missing or the request fails.
 
 ## Agent Skills
 

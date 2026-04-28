@@ -13,6 +13,59 @@ fn make_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+fn read_brave_api_key() -> Option<String> {
+    let path = dirs_next::home_dir()?.join(".local-assistant").join("config.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let key = json.get("brave_search_api_key")?.as_str()?.trim().to_string();
+    if key.is_empty() { None } else { Some(key) }
+}
+
+fn search_brave(client: &reqwest::blocking::Client, query: &str, api_key: &str) -> Vec<serde_json::Value> {
+    let url = format!(
+        "https://api.search.brave.com/res/v1/web/search?q={}&count=5",
+        urlencoding::encode(query)
+    );
+    let resp = match client
+        .get(&url)
+        .header("Accept", "application/json")
+        .header("Accept-Encoding", "gzip")
+        .header("X-Subscription-Token", api_key)
+        .send()
+    {
+        Ok(r) => r,
+        Err(e) => { eprintln!("[web_search/brave] request failed: {e}"); return vec![]; }
+    };
+    if !resp.status().is_success() {
+        eprintln!("[web_search/brave] HTTP {}", resp.status());
+        return vec![];
+    }
+    let body = match resp.text() {
+        Ok(b) => b,
+        Err(e) => { eprintln!("[web_search/brave] read failed: {e}"); return vec![]; }
+    };
+    let json: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(j) => j,
+        Err(e) => { eprintln!("[web_search/brave] parse failed: {e}"); return vec![]; }
+    };
+    let results = json
+        .get("web")
+        .and_then(|w| w.get("results"))
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter().take(5).map(|item| {
+                serde_json::json!({
+                    "title":   item.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
+                    "url":     item.get("url").and_then(|v| v.as_str()).unwrap_or_default(),
+                    "snippet": item.get("description").and_then(|v| v.as_str()).unwrap_or_default(),
+                })
+            }).collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    eprintln!("[web_search/brave] {} results", results.len());
+    results
+}
+
 
 /// Scrape Bing search results. Tries multiple CSS selector strategies since Bing periodically
 /// updates its HTML structure.
@@ -149,6 +202,11 @@ fn search_ddg_lite(client: &reqwest::blocking::Client, query: &str) -> Vec<serde
 #[tauri::command]
 pub fn web_search(query: String) -> Result<Vec<serde_json::Value>, String> {
     let client = make_client()?;
+
+    if let Some(key) = read_brave_api_key() {
+        let results = search_brave(&client, &query, &key);
+        if !results.is_empty() { return Ok(results); }
+    }
 
     let results = search_ddg(&client, &query);
     if !results.is_empty() { return Ok(results); }
