@@ -41,9 +41,11 @@ pnpm tauri dev
 ### Production build
 
 ```bash
-pnpm tauri build -- --target universal-apple-darwin
-# Output: src-tauri/target/universal-apple-darwin/release/bundle/macos/Local Assistant.app
+pnpm tauri build -- --target aarch64-apple-darwin
+# Output: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Local Assistant.app
 ```
+
+> For a universal binary that runs on both Apple Silicon and Intel Macs, use `--target universal-apple-darwin` instead.
 
 ## Configuration
 
