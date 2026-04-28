@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{fs_ops, ollama_check, skills, web};
+use commands::{fs_ops, mcp, ollama_check, skills, web};
 use tauri::Manager;
 use std::path::PathBuf;
 
@@ -44,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .manage(mcp::McpManager(std::sync::Mutex::new(std::collections::HashMap::new())))
         .setup(|app| {
             setup_user_data(app);
             Ok(())
@@ -60,6 +61,9 @@ pub fn run() {
             ollama_check::upgrade_ollama,
             web::web_search,
             web::web_fetch,
+            mcp::mcp_start_all,
+            mcp::mcp_reload_all,
+            mcp::mcp_call_tool,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

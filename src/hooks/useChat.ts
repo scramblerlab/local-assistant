@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { refreshSkills } from "./useSkills";
 import { chatStream } from "../services/ollama";
@@ -6,6 +6,8 @@ import { parseStreamChunk } from "../services/streamParser";
 import { splitFinalSegment } from "../utils/responseParser";
 import { saveSession } from "../services/sessions";
 import { webSearch, webFetch } from "../services/webTools";
+import { callMcpTool } from "../services/mcp";
+import { useMcpStore } from "../stores/mcpStore";
 import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
 import { useSkillStore } from "../stores/skillStore";
@@ -13,6 +15,8 @@ import { useContextManager } from "./useContextManager";
 import type { ChatMessage } from "../types/ollama";
 import type { MessageSegment } from "../types/chat";
 import type { SkillMeta } from "../types/skill";
+import type { McpTool } from "../services/mcp";
+import type { McpServerSummary } from "../services/mcp";
 
 const BASE_SYSTEM_PROMPT = `You are a helpful local AI assistant. Be concise and precise.
 
@@ -41,11 +45,76 @@ file content goes here — no escaping needed
 - Use write_file tags (not tool_call) to save files; content goes between the tags, no JSON escaping.
 - Use read_file to read local files. Use list_dir to list directory contents.
 - After receiving a tool result, continue naturally — do not repeat the tag.
-- You may call multiple tools per answer, one tag at a time.`;
+- You may call multiple tools per answer, one tag at a time.
+
+## Extending This Assistant
+
+### Add a Skill
+Skills inject extra instructions into this system prompt and appear as toggles in the sidebar.
+Create \`~/.local-assistant/skills/{name}/SKILL.md\`:
+
+\`\`\`
+---
+name: my-skill
+description: One-line description shown in the sidebar
+---
+
+## Instructions
+
+Your instructions here — injected verbatim into the system prompt when the skill is active.
+\`\`\`
+
+The skill appears in the sidebar immediately. The user toggles it on to activate it.
+You can create skill files directly using the write_file tool.
+
+### Add an MCP Server
+This app (Local Assistant) loads MCP servers from exactly one file: \`~/.local-assistant/config.json\`.
+There is no other config location. The format is fixed — do not invent key names.
+
+When a user asks how to add an MCP server, give them these exact steps:
+
+1. Read the current config first:
+<tool_call>{"name": "read_file", "args": {"path": "~/.local-assistant/config.json"}}</tool_call>
+
+2. Add the new server to the \`mcp_servers\` array and write the file back. Example result:
+\`\`\`json
+{
+  "brave_search_api_key": "...",
+  "mcp_servers": [
+    { "id": "shopify-dev", "command": "npx", "args": ["-y", "@shopify/dev-mcp@latest"] },
+    { "id": "new-server",  "command": "npx", "args": ["-y", "@org/mcp-package@latest"] }
+  ]
+}
+\`\`\`
+The required fields are exactly: \`id\` (display name), \`command\` (executable), \`args\` (array of strings).
+Do not add any other fields.
+
+3. Tell the user to click the **↺ Reload** button in the **MCP section of the sidebar** (bottom of the left panel).
+   The server will start, connect, and its tools will appear as orange pills immediately.`;
+
+function buildMcpSection(servers: McpServerSummary[]): string {
+  if (servers.length === 0) return "";
+  const parts = servers.map((server) => {
+    const toolDocs = server.tools.map((tool: McpTool) => {
+      const props = tool.inputSchema?.properties ?? {};
+      const required = tool.inputSchema?.required ?? [];
+      const exampleArgs: Record<string, string> = {};
+      for (const key of required) {
+        exampleArgs[key] = `<${key}>`;
+      }
+      const optional = Object.keys(props).filter((k) => !required.includes(k));
+      const optHint = optional.length > 0 ? ` Optional args: ${optional.join(", ")}.` : "";
+      return `**${tool.name}**: ${tool.description ?? ""}${optHint}\n<tool_call>{"name": "mcp__${server.id}__${tool.name}", "args": ${JSON.stringify(exampleArgs)}}</tool_call>`;
+    }).join("\n\n");
+    return `### ${server.id}\n${toolDocs}`;
+  });
+  return `\n\n## MCP Tools\n\n${parts.join("\n\n")}`;
+}
 
 function buildSystemPrompt(
   availableSkills: SkillMeta[],
-  activeSkills: ReturnType<typeof useSkillStore.getState>["active"]
+  activeSkills: ReturnType<typeof useSkillStore.getState>["active"],
+  mcpServers: McpServerSummary[],
 ): string {
   let prompt = BASE_SYSTEM_PROMPT;
 
@@ -65,6 +134,8 @@ function buildSystemPrompt(
       .join("\n\n---\n\n");
     prompt += `\n\n# Active Skills (full instructions loaded)\n\n${block}`;
   }
+
+  prompt += buildMcpSection(mcpServers);
 
   return prompt;
 }
@@ -95,6 +166,12 @@ async function executeTool(name: string, args: Record<string, string>): Promise<
     const entries = await invoke<string[]>("list_dir", { path: args.path ?? "" });
     return entries.join("\n");
   }
+  if (name.startsWith("mcp__")) {
+    const parts = name.split("__");
+    const serverId = parts[1];
+    const toolName = parts.slice(2).join("__");
+    return callMcpTool(serverId, toolName, args as Record<string, unknown>);
+  }
   return `Unknown tool: ${name}`;
 }
 
@@ -114,6 +191,10 @@ export function useChat(model: string) {
 
   const [isCompacting, setIsCompacting] = useState(false);
   const sendingRef = useRef(false);
+
+  useEffect(() => {
+    useMcpStore.getState().initialize();
+  }, []);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -138,7 +219,7 @@ export function useChat(model: string) {
       }
 
       // ── Normal message ─────────────────────────────────────────────────
-      const systemPrompt = buildSystemPrompt(availableSkills, activeSkills);
+      const systemPrompt = buildSystemPrompt(availableSkills, activeSkills, useMcpStore.getState().servers);
       const messages = await buildMessages(systemPrompt, text);
 
       const tId = addTurn(text, model);
