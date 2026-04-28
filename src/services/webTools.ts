@@ -6,8 +6,8 @@ export interface SearchResult {
   snippet: string;
 }
 
-export async function webSearch(query: string): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("web_search", { query });
+export async function webSearch(query: string, provider: string): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>("web_search", { query, provider });
 }
 
 export async function webFetch(url: string): Promise<string> {

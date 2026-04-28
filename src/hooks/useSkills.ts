@@ -10,25 +10,24 @@ export async function refreshSkills() {
 }
 
 export function useSkills() {
-  const { available, active, setAvailable, activateSkill, deactivateSkill, isActive } = useSkillStore();
+  const { available, active, setAvailable, activateSkill, isActive } = useSkillStore();
 
   useEffect(() => {
-    invoke<SkillMeta[]>("list_skills").then(setAvailable).catch(console.error);
-  }, [setAvailable]);
+    invoke<SkillMeta[]>("list_skills").then(async (skills) => {
+      setAvailable(skills);
+      await Promise.all(
+        skills.map(async (meta) => {
+          if (isActive(meta.id)) return;
+          try {
+            const content = await invoke<string>("read_skill_file", { path: meta.path });
+            activateSkill(meta.id, parseSkillContent(meta.id, meta.path, content));
+          } catch (e) {
+            console.error("Failed to load skill:", meta.id, e);
+          }
+        })
+      );
+    }).catch(console.error);
+  }, [setAvailable, activateSkill, isActive]);
 
-  const toggleSkill = async (meta: SkillMeta) => {
-    if (isActive(meta.id)) {
-      deactivateSkill(meta.id);
-    } else {
-      try {
-        const content = await invoke<string>("read_skill_file", { path: meta.path });
-        const skill = parseSkillContent(meta.id, meta.path, content);
-        activateSkill(meta.id, skill);
-      } catch (e) {
-        console.error("Failed to load skill:", e);
-      }
-    }
-  };
-
-  return { available, active, toggleSkill, isActive };
+  return { available, active };
 }

@@ -11,6 +11,7 @@ import { useMcpStore } from "../stores/mcpStore";
 import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
 import { useSkillStore } from "../stores/skillStore";
+import { useSearchStore } from "../stores/searchStore";
 import { useContextManager } from "./useContextManager";
 import { useCloudConfig, useCloudModels } from "./useModels";
 import type { ChatMessage } from "../types/ollama";
@@ -41,7 +42,7 @@ file content goes here — no escaping needed
 <tool_call>{"name": "list_dir", "args": {"path": "~/.local-assistant/skills"}}</tool_call>
 
 ### Rules
-- For current information (news, weather, prices, recent events), use web_search first.
+- For current information (news, weather, prices, recent events), use web_search first. Note: web_search requires a provider (Ollama or Brave) to be selected in the Web Search section of the sidebar.
 - Use web_fetch to read the full content of a specific URL.
 - Use write_file tags (not tool_call) to save files; content goes between the tags, no JSON escaping.
 - Use read_file to read local files. Use list_dir to list directory contents.
@@ -51,7 +52,7 @@ file content goes here — no escaping needed
 ## Extending This Assistant
 
 ### Add a Skill
-Skills inject extra instructions into this system prompt and appear as toggles in the sidebar.
+Skills inject extra instructions into this system prompt and are always active once installed.
 Create \`~/.local-assistant/skills/{name}/SKILL.md\`:
 
 \`\`\`
@@ -62,10 +63,10 @@ description: One-line description shown in the sidebar
 
 ## Instructions
 
-Your instructions here — injected verbatim into the system prompt when the skill is active.
+Your instructions here — injected verbatim into the system prompt.
 \`\`\`
 
-The skill appears in the sidebar immediately. The user toggles it on to activate it.
+The skill appears in the sidebar immediately and is always active.
 You can create skill files directly using the write_file tool.
 
 ### Add an MCP Server
@@ -132,12 +133,12 @@ function buildSystemPrompt(
 ): string {
   let prompt = BASE_SYSTEM_PROMPT;
 
-  // Always tell the LLM which skills are installed, even if none are active
+  // Always tell the LLM which skills are installed
   if (availableSkills.length > 0) {
     const catalog = availableSkills
       .map((s) => `- **${s.name}** (path: \`${s.path}\`): ${s.description}`)
       .join("\n");
-    prompt += `\n\n# Available Skills\nThe following skills are installed in this assistant. When a user's request matches a skill, mention it by name and let them know they can activate it in the sidebar to unlock full instructions.\n${catalog}`;
+    prompt += `\n\n# Available Skills\nThe following skills are installed and always active in this assistant:\n${catalog}`;
   }
 
   // Inject full instructions for skills the user has toggled on
@@ -159,7 +160,11 @@ const TOOL_TIMEOUT_MS = 15_000;
 
 async function executeTool(name: string, args: Record<string, string>): Promise<string> {
   if (name === "web_search") {
-    const results = await webSearch(args.query ?? "");
+    const provider = useSearchStore.getState().provider;
+    if (!provider) {
+      return "Web search is not configured. Ask the user to select a provider (Ollama or Brave) in the Web Search section of the sidebar.";
+    }
+    const results = await webSearch(args.query ?? "", provider);
     return results.length === 0
       ? "No results found."
       : results.map((r, i) => `${i + 1}. **${r.title}**\n   URL: ${r.url}\n   ${r.snippet}`).join("\n\n");
