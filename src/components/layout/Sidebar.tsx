@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import type { OllamaStatus } from "../../hooks/useOllamaHealth";
 import { useActiveModel } from "../../hooks/useModels";
 import { ModelManager } from "../models/ModelManager";
 import { SkillPanel } from "../skills/SkillPanel";
+import { McpPanel } from "../mcp/McpPanel";
+import { useMcpStore } from "../../stores/mcpStore";
 import { useChatStore } from "../../stores/chatStore";
 import { getModelContextLength } from "../../services/ollama";
 import { estimateMessageTokens } from "../../utils/tokenEstimate";
@@ -101,11 +103,12 @@ function ContextUsageBar({ model }: { model: string }) {
   );
 }
 
-type Section = "models" | "skills" | null;
+type Section = "models" | "skills" | "mcp" | null;
 
 export function Sidebar({ ollamaStatus }: Props) {
   const [open, setOpen] = useState<Section>("models");
   const { activeModel } = useActiveModel();
+  const { loading: mcpLoading, reload: mcpReload } = useMcpStore();
 
   const toggle = (s: Section) => setOpen((v) => (v === s ? null : s));
 
@@ -215,6 +218,53 @@ export function Sidebar({ ollamaStatus }: Props) {
             Skills
           </button>
           {open === "skills" && <SkillPanel />}
+        </div>
+
+        {/* MCP section */}
+        <div style={{ marginTop: 2 }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <button onClick={() => toggle("mcp")} style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "10px 18px",
+              background: "none",
+              border: "none",
+              color: open === "mcp" ? "var(--color-text-primary)" : "var(--color-text-muted)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.8px",
+              textTransform: "uppercase",
+              fontFamily: "var(--font-sans)",
+              transition: "color 0.15s",
+            }}>
+              {open === "mcp"
+                ? <ChevronDown size={11} />
+                : <ChevronRight size={11} />}
+              MCP
+            </button>
+            <button
+              onClick={mcpReload}
+              disabled={mcpLoading}
+              title="Reload MCP servers"
+              style={{
+                padding: "10px 12px",
+                background: "none",
+                border: "none",
+                color: "var(--color-text-muted)",
+                cursor: mcpLoading ? "default" : "pointer",
+                opacity: mcpLoading ? 0.4 : 1,
+                transition: "color 0.15s, opacity 0.15s",
+                flexShrink: 0,
+              }}
+              onMouseEnter={(e) => { if (!mcpLoading) e.currentTarget.style.color = "var(--color-text-dim)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--color-text-muted)"; }}
+            >
+              <RefreshCw size={11} style={{ animation: mcpLoading ? "dot-pulse 1.4s ease-in-out infinite" : undefined }} />
+            </button>
+          </div>
+          {open === "mcp" && <McpPanel />}
         </div>
       </div>
 
