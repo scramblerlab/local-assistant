@@ -11,7 +11,7 @@ interface ChatState {
   currentSessionCreatedAt: number;
 
   // Turn lifecycle
-  addTurn: (userMessage: string, model: string) => string;
+  addTurn: (userMessage: string, model: string, images?: string[]) => string;
   appendToSegment: (turnId: string, kind: SegmentKind, delta: string) => void;
   addSegment: (turnId: string, kind: SegmentKind, content: string) => void;
   replaceSegmentsFrom: (turnId: string, fromIndex: number, segments: MessageSegment[]) => void;
@@ -39,10 +39,10 @@ export const useChatStore = create<ChatState>((set) => ({
   currentSessionId: "",
   currentSessionCreatedAt: 0,
 
-  addTurn: (userMessage, model) => {
+  addTurn: (userMessage, model, images) => {
     const id = uid();
     set((s) => ({
-      turns: [...s.turns, { id, userMessage, segments: [], isStreaming: true, timestamp: Date.now(), model }],
+      turns: [...s.turns, { id, userMessage, images, segments: [], isStreaming: true, timestamp: Date.now(), model }],
     }));
     return id;
   },

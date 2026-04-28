@@ -55,6 +55,18 @@ export function ResponseGroup({ turn }: Props) {
           color: "var(--color-text-primary)",
           lineHeight: 1.5,
         }}>
+          {turn.images && turn.images.length > 0 && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+              {turn.images.map((img, i) => (
+                <img
+                  key={i}
+                  src={`data:image/jpeg;base64,${img}`}
+                  alt=""
+                  style={{ height: 80, width: "auto", maxWidth: 120, borderRadius: 4, objectFit: "cover", border: "1px solid var(--color-border-2)", display: "block" }}
+                />
+              ))}
+            </div>
+          )}
           {turn.userMessage}
         </div>
       </div>

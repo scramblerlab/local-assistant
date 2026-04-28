@@ -22,6 +22,7 @@ export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
   thinking?: string;
+  images?: string[]; // base64-encoded, vision models only
 }
 
 export interface OllamaStreamChunk {

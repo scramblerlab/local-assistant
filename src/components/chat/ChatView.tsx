@@ -1,5 +1,6 @@
 import { useChatStore } from "../../stores/chatStore";
 import { useChat } from "../../hooks/useChat";
+import { useModelCapabilities } from "../../hooks/useModels";
 import { MessageList } from "./MessageList";
 import { InputBar } from "./InputBar";
 import { ChatHeader } from "./ChatHeader";
@@ -13,6 +14,7 @@ interface Props {
 export function ChatView({ model, ollamaReady }: Props) {
   const { turns, abortController, currentSessionId, setCurrentSession } = useChatStore();
   const { sendMessage, stopStream, isCompacting } = useChat(model);
+  const { supportsVision } = useModelCapabilities(model);
   const isStreaming = !!abortController;
 
   const onNewSession = async () => {
@@ -40,6 +42,7 @@ export function ChatView({ model, ollamaReady }: Props) {
         isStreaming={isStreaming}
         isCompacting={isCompacting}
         disabled={!ollamaReady || !model}
+        supportsVision={supportsVision}
       />
     </div>
   );
