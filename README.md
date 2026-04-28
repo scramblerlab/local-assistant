@@ -47,6 +47,32 @@ pnpm tauri build -- --target aarch64-apple-darwin
 
 > For a universal binary that runs on both Apple Silicon and Intel Macs, use `--target universal-apple-darwin` instead.
 
+## Useful Commands
+
+```bash
+# Start dev server (hot-reload frontend + Rust)
+pnpm tauri dev
+
+# Type-check TypeScript without building
+pnpm tsc --noEmit
+
+# Kill any process holding port 1420 (dev server port), then restart
+lsof -ti :1420 | xargs kill -9
+pnpm tauri dev
+
+# Full clean rebuild from scratch
+pkill -f "tauri dev" || true
+rm -rf node_modules dist src-tauri/target
+pnpm install
+pnpm tauri dev
+
+# Production build — Apple Silicon
+pnpm tauri build -- --target aarch64-apple-darwin
+
+# Production build — Universal (Intel + Apple Silicon)
+pnpm tauri build -- --target universal-apple-darwin
+```
+
 ## Configuration
 
 All optional features are configured in `~/.local-assistant/config.json`:
