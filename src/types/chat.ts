@@ -9,6 +9,7 @@ export interface MessageSegment {
 export interface Turn {
   id: string;
   userMessage: string;
+  images?: string[]; // base64 strings attached to the user message
   segments: MessageSegment[];
   isStreaming: boolean;
   timestamp: number;

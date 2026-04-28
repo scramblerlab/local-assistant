@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listModels, deleteModel } from "../services/ollama";
+import { listModels, deleteModel, getModelCapabilities } from "../services/ollama";
 import { useModelStore } from "../stores/modelStore";
 
 export function useInstalledModels() {
@@ -17,6 +17,16 @@ export function useDeleteModel() {
     mutationFn: deleteModel,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["models"] }),
   });
+}
+
+export function useModelCapabilities(model: string) {
+  const { data } = useQuery({
+    queryKey: ["capabilities", model],
+    queryFn: () => getModelCapabilities(model),
+    enabled: !!model,
+    staleTime: Infinity,
+  });
+  return { supportsVision: (data ?? []).includes("vision") };
 }
 
 export function useActiveModel() {

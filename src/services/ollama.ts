@@ -15,6 +15,7 @@ export async function listModels(): Promise<OllamaModel[]> {
 
 // Module-level cache so we only fetch model info once per model per session
 const contextLengthCache = new Map<string, number>();
+const capabilitiesCache = new Map<string, string[]>();
 
 export async function getModelContextLength(name: string): Promise<number> {
   if (contextLengthCache.has(name)) return contextLengthCache.get(name)!;
@@ -42,6 +43,23 @@ export async function getModelContextLength(name: string): Promise<number> {
     return length;
   } catch {
     return 4096; // safe fallback
+  }
+}
+
+export async function getModelCapabilities(name: string): Promise<string[]> {
+  if (capabilitiesCache.has(name)) return capabilitiesCache.get(name)!;
+  try {
+    const res = await fetch(`${BASE}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    const capabilities: string[] = data?.capabilities ?? [];
+    capabilitiesCache.set(name, capabilities);
+    return capabilities;
+  } catch {
+    return [];
   }
 }
 

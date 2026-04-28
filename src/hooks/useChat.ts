@@ -197,7 +197,7 @@ export function useChat(model: string) {
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, images: string[] = []) => {
       if (!text.trim() || !model) return;
       if (sendingRef.current) return;
       sendingRef.current = true;
@@ -222,9 +222,17 @@ export function useChat(model: string) {
       const systemPrompt = buildSystemPrompt(availableSkills, activeSkills, useMcpStore.getState().servers);
       const messages = await buildMessages(systemPrompt, text);
 
-      const tId = addTurn(text, model);
+      const tId = addTurn(text, model, images.length > 0 ? images : undefined);
       const ac = new AbortController();
       setAbortController(ac);
+
+      // Attach images to the last user message if provided
+      if (images.length > 0) {
+        const last = messages[messages.length - 1];
+        if (last && last.role === "user") {
+          messages[messages.length - 1] = { ...last, images };
+        }
+      }
 
       try {
         const conversationMessages: ChatMessage[] = [...messages];

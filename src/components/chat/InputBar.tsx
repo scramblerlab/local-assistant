@@ -1,30 +1,54 @@
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, Square } from "lucide-react";
+import { useState, useRef, useCallback, KeyboardEvent, ClipboardEvent } from "react";
+import { Send, Square, Paperclip, X } from "lucide-react";
 import { usePromptHistory } from "../../hooks/usePromptHistory";
 
 interface Props {
-  onSend: (text: string) => void;
+  onSend: (text: string, images: string[]) => void;
   onStop: () => void;
   isStreaming: boolean;
   isCompacting?: boolean;
   disabled?: boolean;
+  supportsVision?: boolean;
 }
 
-export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled }: Props) {
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Strip "data:image/...;base64," prefix
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled, supportsVision }: Props) {
   const [value, setValue] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const composing = useRef(false);
   const justFinishedComposing = useRef(false);
   const { push, up, down } = usePromptHistory();
+
+  const addImages = useCallback(async (files: File[]) => {
+    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+    const encoded = await Promise.all(imageFiles.map(readFileAsBase64));
+    setImages((prev) => [...prev, ...encoded]);
+  }, []);
 
   const submit = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || isStreaming || isCompacting) return;
     push(trimmed);
-    onSend(trimmed);
+    onSend(trimmed, images);
     setValue("");
+    setImages([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [value, isStreaming, isCompacting, push, onSend]);
+  }, [value, images, isStreaming, isCompacting, push, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -56,8 +80,46 @@ export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled }
     ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
   };
 
+  const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!supportsVision) return;
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((item) => item.type.startsWith("image/"));
+    if (imageItems.length === 0) return;
+    e.preventDefault();
+    const files = imageItems.map((item) => item.getAsFile()).filter(Boolean) as File[];
+    addImages(files);
+  }, [supportsVision, addImages]);
+
+  const canSend = (value.trim() || images.length > 0) && !disabled;
+
   return (
     <div style={{ borderTop: "1.5px solid var(--color-border)", background: "var(--color-surface)", padding: "14px 16px 12px" }}>
+      {/* Thumbnail strip */}
+      {images.length > 0 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+          {images.map((img, i) => (
+            <div key={i} style={{ position: "relative", flexShrink: 0 }}>
+              <img
+                src={`data:image/jpeg;base64,${img}`}
+                alt=""
+                style={{ height: 64, width: "auto", maxWidth: 100, borderRadius: 6, objectFit: "cover", border: "1.5px solid var(--color-border-2)", display: "block" }}
+              />
+              <button
+                onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                style={{
+                  position: "absolute", top: -6, right: -6,
+                  width: 16, height: 16, borderRadius: "50%",
+                  background: "var(--color-surface)", border: "1.5px solid var(--color-border-2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", padding: 0,
+                }}
+              >
+                <X size={9} color="var(--color-text-muted)" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div style={{
         display: "flex",
         alignItems: "flex-end",
@@ -70,6 +132,33 @@ export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled }
       }}
         onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-border-2)")}
       >
+        {supportsVision && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files) addImages(Array.from(e.target.files));
+                e.target.value = "";
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach image"
+              style={{
+                background: "none", border: "none", padding: 2, flexShrink: 0,
+                color: "var(--color-text-muted)", cursor: "pointer",
+                display: "flex", alignItems: "center",
+                transition: "color 0.15s",
+              }}
+            >
+              <Paperclip size={15} />
+            </button>
+          </>
+        )}
         <textarea
           ref={textareaRef}
           value={value}
@@ -80,6 +169,7 @@ export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled }
             justFinishedComposing.current = true;
           }}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={
             disabled ? "Ollama not connected…" :
             isCompacting ? "Compacting context…" :
@@ -114,14 +204,14 @@ export function InputBar({ onSend, onStop, isStreaming, isCompacting, disabled }
             <Square size={13} color="#fff" />
           </button>
         ) : (
-          <button onClick={submit} disabled={!value.trim() || disabled} style={{
+          <button onClick={submit} disabled={!canSend} style={{
             width: 32, height: 32, borderRadius: "50%",
-            background: value.trim() && !disabled ? "var(--color-accent)" : "var(--color-surface-2)",
-            border: "1.5px solid " + (value.trim() && !disabled ? "var(--color-accent)" : "var(--color-border-2)"),
+            background: canSend ? "var(--color-accent)" : "var(--color-surface-2)",
+            border: "1.5px solid " + (canSend ? "var(--color-accent)" : "var(--color-border-2)"),
             display: "flex", alignItems: "center", justifyContent: "center",
             flexShrink: 0, transition: "background 0.15s, border-color 0.15s",
           }}>
-            <Send size={13} color={value.trim() && !disabled ? "#0a0a0f" : "var(--color-text-muted)"} />
+            <Send size={13} color={canSend ? "#0a0a0f" : "var(--color-text-muted)"} />
           </button>
         )}
       </div>
