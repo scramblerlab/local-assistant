@@ -43,7 +43,6 @@ pub async fn cloud_get_capabilities(name: String, api_key: String) -> Result<Vec
         }
 
         let text = resp.text().map_err(|e| e.to_string())?;
-        eprintln!("[cloud/show] {}", text);
         let data: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         let caps = data["capabilities"]
             .as_array()
@@ -54,6 +53,42 @@ pub async fn cloud_get_capabilities(name: String, api_key: String) -> Result<Vec
             })
             .unwrap_or_default();
         Ok(caps)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn cloud_get_context_length(name: String, api_key: String) -> Result<i64, String> {
+    tokio::task::spawn_blocking(move || {
+        let client = blocking::Client::new();
+        let body = serde_json::to_string(&serde_json::json!({ "name": name })).unwrap();
+        let resp = client
+            .post("https://ollama.com/api/show")
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .body(body)
+            .send()
+            .map_err(|e| e.to_string())?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Cloud API error: {}", resp.status()));
+        }
+
+        let text = resp.text().map_err(|e| e.to_string())?;
+        let data: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+
+        // Context length key is {architecture}.context_length in model_info
+        if let Some(info) = data["model_info"].as_object() {
+            for (key, val) in info {
+                if key.ends_with("context_length") {
+                    if let Some(n) = val.as_i64() {
+                        return Ok(n);
+                    }
+                }
+            }
+        }
+        Ok(4096) // safe fallback
     })
     .await
     .map_err(|e| e.to_string())?

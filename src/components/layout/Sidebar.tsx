@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 import type { OllamaStatus } from "../../hooks/useOllamaHealth";
-import { useActiveModel } from "../../hooks/useModels";
+import { useActiveModel, useCloudConfig, useCloudModelContextLength } from "../../hooks/useModels";
 import { ModelManager, CloudPanel } from "../models/ModelManager";
 import { SkillPanel } from "../skills/SkillPanel";
 import { McpPanel } from "../mcp/McpPanel";
@@ -37,12 +37,23 @@ function ContextUsageBar({ model }: { model: string }) {
   const turns = useChatStore((s) => s.turns);
   const compactSummary = useChatStore((s) => s.compactSummary);
   const isCloud = useModelStore((s) => s.isCloudModel);
+  const { data: cloudConfig } = useCloudConfig();
+  const { data: cloudContextLength } = useCloudModelContextLength(
+    model,
+    isCloud ? (cloudConfig?.apiKey ?? null) : null
+  );
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
 
   useEffect(() => {
-    if (!model || isCloud) { setUsage(null); return; }
+    if (!model) { setUsage(null); return; }
+
+    const getLimit = isCloud
+      ? Promise.resolve(cloudContextLength ?? null)
+      : getModelContextLength(model).then((n) => n);
+
     let cancelled = false;
-    getModelContextLength(model).then((limit) => {
+    getLimit.then((limit) => {
+      if (limit === null) return; // cloud length not loaded yet
       if (cancelled) return;
       let used = 0;
       if (compactSummary) used += estimateMessageTokens("system", compactSummary);
@@ -56,7 +67,7 @@ function ContextUsageBar({ model }: { model: string }) {
       setUsage({ used, limit });
     });
     return () => { cancelled = true; };
-  }, [model, isCloud, turns, compactSummary]);
+  }, [model, isCloud, cloudContextLength, turns, compactSummary]);
 
   if (!usage) return null;
 

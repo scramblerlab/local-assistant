@@ -66,6 +66,7 @@ pub fn run() {
             mcp::mcp_call_tool,
             cloud::cloud_list_models,
             cloud::cloud_get_capabilities,
+            cloud::cloud_get_context_length,
             cloud::cloud_chat_stream,
         ])
         .run(tauri::generate_context!())

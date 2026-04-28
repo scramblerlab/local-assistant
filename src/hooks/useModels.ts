@@ -79,13 +79,28 @@ export function useCloudModelCapabilities(model: string, apiKey: string | null) 
 
 export function useModelCapabilities(model: string) {
   const isCloud = useModelStore((s) => s.isCloudModel);
-  const { data } = useQuery({
+  const { data: cloudConfig } = useCloudConfig();
+  const apiKey = cloudConfig?.apiKey ?? null;
+
+  const { data: localCaps } = useQuery({
     queryKey: ["capabilities", model],
     queryFn: () => getModelCapabilities(model),
     enabled: !!model && !isCloud,
     staleTime: Infinity,
   });
-  return { supportsVision: (data ?? []).includes("vision") };
+  const { data: cloudCaps } = useCloudModelCapabilities(model, isCloud ? apiKey : null);
+
+  const caps = isCloud ? (cloudCaps ?? []) : (localCaps ?? []);
+  return { supportsVision: caps.includes("vision") };
+}
+
+export function useCloudModelContextLength(model: string, apiKey: string | null) {
+  return useQuery({
+    queryKey: ["cloud-context-length", model, apiKey],
+    queryFn: () => invoke<number>("cloud_get_context_length", { name: model, apiKey }),
+    enabled: !!model && !!apiKey,
+    staleTime: Infinity,
+  });
 }
 
 export function useActiveModel() {
