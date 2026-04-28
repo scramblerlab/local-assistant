@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listModels, deleteModel, getModelCapabilities } from "../services/ollama";
+import { invoke } from "@tauri-apps/api/core";
+import { listModels, deleteModel, getModelCapabilities, listCloudModels, getCloudModelCapabilities } from "../services/ollama";
 import { useModelStore } from "../stores/modelStore";
+import type { OllamaModel } from "../types/ollama";
 
 export function useInstalledModels() {
   return useQuery({
@@ -16,6 +18,44 @@ export function useDeleteModel() {
   return useMutation({
     mutationFn: deleteModel,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["models"] }),
+  });
+}
+
+export function useCloudConfig() {
+  return useQuery({
+    queryKey: ["cloud-config"],
+    queryFn: async (): Promise<{ apiKey: string | null }> => {
+      try {
+        const raw = await invoke<string>("read_file", { path: "~/.local-assistant/config.json" });
+        const parsed = JSON.parse(raw);
+        const key = (parsed?.ollama_cloud_api_key as string | undefined)?.trim() ?? "";
+        return { apiKey: key || null };
+      } catch {
+        return { apiKey: null };
+      }
+    },
+    staleTime: Infinity,
+  });
+}
+
+export function useCloudModels() {
+  const { data: config } = useCloudConfig();
+  const apiKey = config?.apiKey ?? null;
+  return useQuery<OllamaModel[]>({
+    queryKey: ["cloud-models", apiKey],
+    queryFn: () => listCloudModels(apiKey!),
+    enabled: !!apiKey,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useCloudModelCapabilities(model: string, apiKey: string | null) {
+  return useQuery({
+    queryKey: ["cloud-capabilities", model, apiKey],
+    queryFn: () => getCloudModelCapabilities(model, apiKey!),
+    enabled: !!model && !!apiKey,
+    staleTime: Infinity,
   });
 }
 

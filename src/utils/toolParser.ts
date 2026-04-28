@@ -14,6 +14,24 @@ function sanitizeJson(raw: string): string {
   return raw.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
 }
 
+// Fallback for models that emit <name>TOOL</name><args>{...}</args> instead of JSON
+function tryXmlFormat(raw: string): ToolCall | null {
+  const nameMatch = raw.match(/<name>\s*([\s\S]*?)\s*<\/name>/);
+  if (!nameMatch) return null;
+  const name = nameMatch[1].trim();
+  const argsMatch = raw.match(/<args>([\s\S]*?)<\/args>/);
+  let args: Record<string, unknown> = {};
+  if (argsMatch) {
+    try {
+      const parsed = JSON.parse(argsMatch[1].trim());
+      if (parsed && typeof parsed === "object") args = parsed;
+    } catch {
+      // non-JSON args — leave empty
+    }
+  }
+  return { name, args: args as Record<string, string> };
+}
+
 // Fallback for write_file when the LLM embeds content with unescaped quotes in JSON.
 // Works because content is always the last field, so the raw blob ends with: ...CONTENT"}}
 function tryWriteFileFallback(raw: string): ToolCall | null {
@@ -43,7 +61,7 @@ export function extractToolCalls(text: string): ToolCall[] {
       const parsed = JSON.parse(sanitizeJson(raw));
       if (parsed.name && parsed.args) calls.push(parsed as ToolCall);
     } catch {
-      const fallback = tryWriteFileFallback(raw);
+      const fallback = tryWriteFileFallback(raw) ?? tryXmlFormat(raw);
       if (fallback) calls.push(fallback);
     }
   }

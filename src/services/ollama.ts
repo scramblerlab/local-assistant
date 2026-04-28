@@ -1,6 +1,8 @@
+import { invoke, Channel } from "@tauri-apps/api/core";
 import type { ChatMessage, OllamaModel, OllamaPullChunk, OllamaStreamChunk, OllamaVersionResponse } from "../types/ollama";
 
 const BASE = "http://localhost:11434";
+export const CLOUD_BASE = "https://ollama.com";
 
 export async function getVersion(): Promise<OllamaVersionResponse> {
   const res = await fetch(`${BASE}/api/version`);
@@ -16,6 +18,7 @@ export async function listModels(): Promise<OllamaModel[]> {
 // Module-level cache so we only fetch model info once per model per session
 const contextLengthCache = new Map<string, number>();
 const capabilitiesCache = new Map<string, string[]>();
+const cloudCapabilitiesCache = new Map<string, string[]>();
 
 export async function getModelContextLength(name: string): Promise<number> {
   if (contextLengthCache.has(name)) return contextLengthCache.get(name)!;
@@ -61,6 +64,79 @@ export async function getModelCapabilities(name: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+export async function listCloudModels(apiKey: string): Promise<OllamaModel[]> {
+  const models = await invoke<OllamaModel[]>("cloud_list_models", { apiKey });
+  return models;
+}
+
+export async function getCloudModelCapabilities(name: string, apiKey: string): Promise<string[]> {
+  const cacheKey = `${apiKey.slice(-8)}:${name}`;
+  if (cloudCapabilitiesCache.has(cacheKey)) return cloudCapabilitiesCache.get(cacheKey)!;
+  try {
+    const caps = await invoke<string[]>("cloud_get_capabilities", { name, apiKey });
+    cloudCapabilitiesCache.set(cacheKey, caps);
+    return caps;
+  } catch {
+    return [];
+  }
+}
+
+export async function* cloudChatStream(
+  model: string,
+  messages: ChatMessage[],
+  apiKey: string,
+  signal?: AbortSignal
+): AsyncGenerator<OllamaStreamChunk> {
+  const queue: string[] = [];
+  let notify: (() => void) | null = null;
+  let finished = false;
+  let streamError: Error | null = null;
+
+  const channel = new Channel<string>();
+  channel.onmessage = (line: string) => {
+    queue.push(line);
+    notify?.();
+    notify = null;
+  };
+
+  const invokePromise = invoke("cloud_chat_stream", {
+    model,
+    messages,
+    apiKey,
+    onChunk: channel,
+  }).then(() => {
+    finished = true;
+    notify?.();
+  }).catch((e: unknown) => {
+    streamError = e instanceof Error ? e : new Error(String(e));
+    finished = true;
+    notify?.();
+  });
+
+  signal?.addEventListener("abort", () => {
+    finished = true;
+    notify?.();
+  });
+
+  while (!finished || queue.length > 0) {
+    if (queue.length === 0 && !finished) {
+      await new Promise<void>((r) => { notify = r; });
+    }
+    if (streamError) throw streamError;
+    if (signal?.aborted) break;
+    while (queue.length > 0) {
+      const line = queue.shift()!;
+      try {
+        yield JSON.parse(line) as OllamaStreamChunk;
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+
+  await invokePromise.catch(() => {});
 }
 
 export async function deleteModel(name: string): Promise<void> {
