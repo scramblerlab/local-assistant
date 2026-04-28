@@ -43,6 +43,7 @@ pub async fn cloud_get_capabilities(name: String, api_key: String) -> Result<Vec
         }
 
         let text = resp.text().map_err(|e| e.to_string())?;
+        eprintln!("[cloud/show] {}", text);
         let data: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
         let caps = data["capabilities"]
             .as_array()

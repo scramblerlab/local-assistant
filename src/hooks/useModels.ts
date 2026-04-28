@@ -78,10 +78,11 @@ export function useCloudModelCapabilities(model: string, apiKey: string | null) 
 }
 
 export function useModelCapabilities(model: string) {
+  const isCloud = useModelStore((s) => s.isCloudModel);
   const { data } = useQuery({
     queryKey: ["capabilities", model],
     queryFn: () => getModelCapabilities(model),
-    enabled: !!model,
+    enabled: !!model && !isCloud,
     staleTime: Infinity,
   });
   return { supportsVision: (data ?? []).includes("vision") };

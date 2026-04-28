@@ -8,6 +8,7 @@ import { McpPanel } from "../mcp/McpPanel";
 import { SearchPanel } from "../search/SearchPanel";
 import { useMcpStore } from "../../stores/mcpStore";
 import { useChatStore } from "../../stores/chatStore";
+import { useModelStore } from "../../stores/modelStore";
 import { getModelContextLength } from "../../services/ollama";
 import { estimateMessageTokens } from "../../utils/tokenEstimate";
 
@@ -35,10 +36,11 @@ function StatusDot({ status }: { status: OllamaStatus }) {
 function ContextUsageBar({ model }: { model: string }) {
   const turns = useChatStore((s) => s.turns);
   const compactSummary = useChatStore((s) => s.compactSummary);
+  const isCloud = useModelStore((s) => s.isCloudModel);
   const [usage, setUsage] = useState<{ used: number; limit: number } | null>(null);
 
   useEffect(() => {
-    if (!model) return;
+    if (!model || isCloud) { setUsage(null); return; }
     let cancelled = false;
     getModelContextLength(model).then((limit) => {
       if (cancelled) return;
@@ -54,7 +56,7 @@ function ContextUsageBar({ model }: { model: string }) {
       setUsage({ used, limit });
     });
     return () => { cancelled = true; };
-  }, [model, turns, compactSummary]);
+  }, [model, isCloud, turns, compactSummary]);
 
   if (!usage) return null;
 
