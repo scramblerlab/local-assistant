@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { refreshSkills } from "./useSkills";
-import { chatStream } from "../services/ollama";
+import { chatStream, cloudChatStream } from "../services/ollama";
 import { parseStreamChunk } from "../services/streamParser";
 import { splitFinalSegment } from "../utils/responseParser";
 import { saveSession } from "../services/sessions";
@@ -12,6 +12,7 @@ import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
 import { useSkillStore } from "../stores/skillStore";
 import { useContextManager } from "./useContextManager";
+import { useCloudConfig, useCloudModels } from "./useModels";
 import type { ChatMessage } from "../types/ollama";
 import type { MessageSegment } from "../types/chat";
 import type { SkillMeta } from "../types/skill";
@@ -90,7 +91,20 @@ The required fields are exactly: \`id\` (display name), \`command\` (executable)
 Do not add any other fields.
 
 3. Tell the user to click the **↺ Reload** button in the **MCP section of the sidebar** (bottom of the left panel).
-   The server will start, connect, and its tools will appear as orange pills immediately.`;
+   The server will start, connect, and its tools will appear as orange pills immediately.
+
+### Add an Ollama Cloud API Key
+Ollama Cloud lets you use hosted models without downloading them. Get a key at https://ollama.com/settings/keys.
+
+Add it to \`~/.local-assistant/config.json\`:
+\`\`\`json
+{
+  "ollama_cloud_api_key": "sk-...",
+  "brave_search_api_key": "...",
+  "mcp_servers": [...]
+}
+\`\`\`
+The Cloud section in the sidebar will appear immediately and list available cloud models.`;
 
 function buildMcpSection(servers: McpServerSummary[]): string {
   if (servers.length === 0) return "";
@@ -188,6 +202,8 @@ export function useChat(model: string) {
   } = useChatStore();
   const { active: activeSkills, available: availableSkills } = useSkillStore();
   const { buildMessages, runCompact, maybeAutoCompact } = useContextManager(model);
+  const { data: cloudConfig } = useCloudConfig();
+  const { data: cloudModels } = useCloudModels();
 
   const [isCompacting, setIsCompacting] = useState(false);
   const sendingRef = useRef(false);
@@ -234,6 +250,9 @@ export function useChat(model: string) {
         }
       }
 
+      const cloudApiKey = cloudConfig?.apiKey ?? null;
+      const isCloudModel = model.endsWith(":cloud") || (cloudModels?.some((m) => m.name === model) ?? false);
+
       try {
         const conversationMessages: ChatMessage[] = [...messages];
 
@@ -242,7 +261,11 @@ export function useChat(model: string) {
           const segsBefore = useChatStore.getState().turns.find((t) => t.id === tId)?.segments.length ?? 0;
           let responseText = "";
 
-          for await (const chunk of chatStream(model, conversationMessages, ac.signal)) {
+          const streamGen = isCloudModel && cloudApiKey
+            ? cloudChatStream(model, conversationMessages, cloudApiKey, ac.signal)
+            : chatStream(model, conversationMessages, ac.signal);
+
+          for await (const chunk of streamGen) {
             const parsed = parseStreamChunk(chunk);
             if (!parsed) continue;
             if (parsed.kind === "done") break;
@@ -294,7 +317,16 @@ export function useChat(model: string) {
           );
         }
       } catch (e) {
-        if ((e as Error).name !== "AbortError") console.error("Stream error:", e);
+        if ((e as Error).name === "AbortError") {
+          // user stopped — nothing to show
+        } else {
+          const raw = e instanceof Error ? e.message : String(e);
+          const is403 = raw.includes("403");
+          const errorText = is403
+            ? `${raw}\n\nUpgrade your Ollama plan to use this cloud model: [ollama.com/pricing](https://ollama.com/pricing)`
+            : raw;
+          addSegment(tId, "final", `> ⚠️ ${errorText}`);
+        }
       }
 
       // Post-process: split "> " quoted blocks out of final segments
@@ -353,6 +385,8 @@ export function useChat(model: string) {
       buildMessages,
       runCompact,
       maybeAutoCompact,
+      cloudConfig,
+      cloudModels,
     ]
   );
 

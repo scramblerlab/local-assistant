@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{fs_ops, mcp, ollama_check, skills, web};
+use commands::{cloud, fs_ops, mcp, ollama_check, skills, web};
 use tauri::Manager;
 use std::path::PathBuf;
 
@@ -64,6 +64,9 @@ pub fn run() {
             mcp::mcp_start_all,
             mcp::mcp_reload_all,
             mcp::mcp_call_tool,
+            cloud::cloud_list_models,
+            cloud::cloud_get_capabilities,
+            cloud::cloud_chat_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
