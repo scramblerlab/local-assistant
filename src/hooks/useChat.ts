@@ -12,6 +12,7 @@ import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
 import { useSkillStore } from "../stores/skillStore";
 import { useSearchStore } from "../stores/searchStore";
+import { useModelStore } from "../stores/modelStore";
 import { useContextManager } from "./useContextManager";
 import { useCloudConfig, useCloudModels } from "./useModels";
 import type { ChatMessage } from "../types/ollama";
@@ -256,7 +257,7 @@ export function useChat(model: string) {
       }
 
       const cloudApiKey = cloudConfig?.apiKey ?? null;
-      const isCloudModel = model.endsWith(":cloud") || (cloudModels?.some((m) => m.name === model) ?? false);
+      const isCloudModel = useModelStore.getState().isCloudModel;
 
       try {
         const conversationMessages: ChatMessage[] = [...messages];

@@ -3,14 +3,16 @@ import { persist, createJSONStorage } from "zustand/middleware";
 
 interface ModelState {
   activeModel: string;
-  setActiveModel: (name: string) => void;
+  isCloudModel: boolean;
+  setActiveModel: (name: string, isCloud?: boolean) => void;
 }
 
 export const useModelStore = create<ModelState>()(
   persist(
     (set) => ({
       activeModel: "",
-      setActiveModel: (name) => set({ activeModel: name }),
+      isCloudModel: false,
+      setActiveModel: (name, isCloud = false) => set({ activeModel: name, isCloudModel: isCloud }),
     }),
     {
       name: "model-store",

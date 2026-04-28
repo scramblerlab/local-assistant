@@ -243,7 +243,7 @@ export function CloudPanel() {
           m={m}
           isActive={m.name === activeModel}
           apiKey={apiKey}
-          onSelect={() => setActiveModel(m.name)}
+          onSelect={() => setActiveModel(m.name, true)}
         />
       ))}
     </div>
