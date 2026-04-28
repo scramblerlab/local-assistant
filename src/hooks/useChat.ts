@@ -218,6 +218,16 @@ export function useChat(model: string) {
     useMcpStore.getState().initialize();
   }, []);
 
+  // Reconcile isCloudModel flag when the cloud model list loads — fixes stale
+  // localStorage state from before the isCloudModel field existed.
+  useEffect(() => {
+    if (!cloudModels || !model) return;
+    const shouldBeCloud = cloudModels.some((m) => m.name === model);
+    if (shouldBeCloud !== useModelStore.getState().isCloudModel) {
+      useModelStore.getState().setActiveModel(model, shouldBeCloud);
+    }
+  }, [cloudModels, model]);
+
   const sendMessage = useCallback(
     async (text: string, images: string[] = []) => {
       if (!text.trim() || !model) return;
