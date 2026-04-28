@@ -21,6 +21,24 @@ export function useDeleteModel() {
   });
 }
 
+export function useSearchConfig() {
+  return useQuery({
+    queryKey: ["search-config"],
+    queryFn: async (): Promise<{ ollamaKey: string | null; braveKey: string | null }> => {
+      try {
+        const raw = await invoke<string>("read_file", { path: "~/.local-assistant/config.json" });
+        const parsed = JSON.parse(raw);
+        const ollamaKey = (parsed?.ollama_cloud_api_key as string | undefined)?.trim() || null;
+        const braveKey = (parsed?.brave_search_api_key as string | undefined)?.trim() || null;
+        return { ollamaKey: ollamaKey || null, braveKey: braveKey || null };
+      } catch {
+        return { ollamaKey: null, braveKey: null };
+      }
+    },
+    staleTime: Infinity,
+  });
+}
+
 export function useCloudConfig() {
   return useQuery({
     queryKey: ["cloud-config"],

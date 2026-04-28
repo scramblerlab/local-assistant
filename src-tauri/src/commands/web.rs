@@ -1,4 +1,13 @@
-use scraper::{Html, Selector};
+fn read_config_key(field: &str) -> Option<String> {
+    let path = dirs_next::home_dir()?.join(".local-assistant").join("config.json");
+    let raw = std::fs::read_to_string(path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let key = json.get(field)?.as_str()?.trim().to_string();
+    if key.is_empty() { None } else { Some(key) }
+}
+
+fn read_brave_api_key() -> Option<String> { read_config_key("brave_search_api_key") }
+fn read_ollama_api_key() -> Option<String> { read_config_key("ollama_cloud_api_key") }
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -11,14 +20,6 @@ fn make_client() -> Result<reqwest::blocking::Client, String> {
         .cookie_store(true)
         .build()
         .map_err(|e| e.to_string())
-}
-
-fn read_brave_api_key() -> Option<String> {
-    let path = dirs_next::home_dir()?.join(".local-assistant").join("config.json");
-    let raw = std::fs::read_to_string(path).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let key = json.get("brave_search_api_key")?.as_str()?.trim().to_string();
-    if key.is_empty() { None } else { Some(key) }
 }
 
 fn search_brave(client: &reqwest::blocking::Client, query: &str, api_key: &str) -> Vec<serde_json::Value> {
@@ -66,159 +67,57 @@ fn search_brave(client: &reqwest::blocking::Client, query: &str, api_key: &str) 
     results
 }
 
-
-/// Scrape Bing search results. Tries multiple CSS selector strategies since Bing periodically
-/// updates its HTML structure.
-fn search_bing(client: &reqwest::blocking::Client, query: &str) -> Vec<serde_json::Value> {
-    let url = format!(
-        "https://www.bing.com/search?q={}&mkt=ja-JP",
-        urlencoding::encode(query)
-    );
-    let body = match client
-        .get(&url)
-        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .header("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
+fn search_ollama(query: &str, api_key: &str) -> Result<Vec<serde_json::Value>, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let body = serde_json::json!({ "query": query, "max_results": 5 }).to_string();
+    let resp = client
+        .post("https://ollama.com/api/web_search")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .body(body)
         .send()
-        .and_then(|r| r.text())
-    {
-        Ok(b) => b,
-        Err(e) => { eprintln!("[web_search/bing] request failed: {e}"); return vec![]; }
-    };
-    eprintln!("[web_search/bing] body_len={}", body.len());
-
-    let document = Html::parse_document(&body);
-    let title_sel = Selector::parse("h2 a").unwrap();
-    let snip_sel = Selector::parse(".b_caption p, .b_algoSlug, [class*='b_caption'] p").unwrap();
-
-    // Try progressively looser container selectors
-    for container_str in &["#b_results li.b_algo", "li.b_algo", "li[class*='b_algo']"] {
-        let Ok(container_sel) = Selector::parse(container_str) else { continue };
-        let mut results = Vec::new();
-        for node in document.select(&container_sel).take(5) {
-            let title_node = node.select(&title_sel).next();
-            let title = title_node
-                .map(|n| n.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
-            if title.is_empty() { continue; }
-            let href = title_node
-                .and_then(|n| n.value().attr("href"))
-                .unwrap_or_default().to_string();
-            let snippet = node.select(&snip_sel).next()
-                .map(|n| n.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
-            results.push(serde_json::json!({"title": title, "url": href, "snippet": snippet}));
-        }
-        if !results.is_empty() {
-            eprintln!("[web_search/bing] {} results (selector: {})", results.len(), container_str);
-            return results;
-        }
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        return Err(format!("Ollama web search error {}: {}", status, text));
     }
-    eprintln!("[web_search/bing] 0 results");
-    vec![]
+    let text = resp.text().map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let results = json["results"]
+        .as_array()
+        .map(|arr| {
+            arr.iter().take(5).map(|item| serde_json::json!({
+                "title":   item["title"].as_str().unwrap_or_default(),
+                "url":     item["url"].as_str().unwrap_or_default(),
+                "snippet": item["content"].as_str().unwrap_or_default(),
+            })).collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    eprintln!("[web_search/ollama] {} results", results.len());
+    Ok(results)
 }
 
-/// DuckDuckGo HTML via POST.
-fn search_ddg(client: &reqwest::blocking::Client, query: &str) -> Vec<serde_json::Value> {
-    let form = format!("q={}&b=&kl=jp-jp&df=", urlencoding::encode(query));
-    let body = match client
-        .post("https://html.duckduckgo.com/html")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .header("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
-        .header("Referer", "https://duckduckgo.com/")
-        .body(form)
-        .send()
-        .and_then(|r| r.text())
-    {
-        Ok(b) => b,
-        Err(e) => { eprintln!("[web_search/ddg] request failed: {e}"); return vec![]; }
-    };
-    eprintln!("[web_search/ddg] body_len={}", body.len());
-
-    // A ~14 KB response is DDG's bot-detection page, not results
-    if body.len() < 20_000 { return vec![]; }
-
-    let document = Html::parse_document(&body);
-    let result_sel = match Selector::parse(".result__body") { Ok(s) => s, Err(_) => return vec![] };
-    let title_sel = match Selector::parse(".result__a") { Ok(s) => s, Err(_) => return vec![] };
-    let snip_sel = match Selector::parse(".result__snippet") { Ok(s) => s, Err(_) => return vec![] };
-
-    let mut results = Vec::new();
-    for node in document.select(&result_sel).take(5) {
-        let title_node = node.select(&title_sel).next();
-        let title = title_node
-            .map(|n| n.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        if title.is_empty() { continue; }
-        let href = title_node
-            .and_then(|n| n.value().attr("href"))
-            .unwrap_or_default().to_string();
-        let snippet = node.select(&snip_sel).next()
-            .map(|n| n.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        results.push(serde_json::json!({"title": title, "url": href, "snippet": snippet}));
-    }
-    eprintln!("[web_search/ddg] {} results", results.len());
-    results
-}
-
-/// DuckDuckGo Lite — simpler HTML, more reliable than the full endpoint.
-fn search_ddg_lite(client: &reqwest::blocking::Client, query: &str) -> Vec<serde_json::Value> {
-    let url = format!("https://lite.duckduckgo.com/lite/?q={}", urlencoding::encode(query));
-    let body = match client
-        .get(&url)
-        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-        .header("Accept-Language", "ja,en-US;q=0.9,en;q=0.8")
-        .send()
-        .and_then(|r| r.text())
-    {
-        Ok(b) => b,
-        Err(e) => { eprintln!("[web_search/ddg-lite] request failed: {e}"); return vec![]; }
-    };
-    eprintln!("[web_search/ddg-lite] body_len={}", body.len());
-
-    let document = Html::parse_document(&body);
-    let link_sel = match Selector::parse("a.result-link") { Ok(s) => s, Err(_) => return vec![] };
-    let snip_sel = match Selector::parse(".result-snippet") { Ok(s) => s, Err(_) => return vec![] };
-
-    let links: Vec<_> = document.select(&link_sel).take(5).collect();
-    let snippets: Vec<_> = document.select(&snip_sel).take(5).collect();
-
-    let mut results = Vec::new();
-    for (i, link) in links.iter().enumerate() {
-        let title = link.text().collect::<String>().trim().to_string();
-        if title.is_empty() { continue; }
-        let href = link.value().attr("href").unwrap_or_default().to_string();
-        let snippet = snippets.get(i)
-            .map(|n| n.text().collect::<String>().trim().to_string())
-            .unwrap_or_default();
-        results.push(serde_json::json!({"title": title, "url": href, "snippet": snippet}));
-    }
-    eprintln!("[web_search/ddg-lite] {} results", results.len());
-    results
-}
-
-/// Search the web and return top 5 results.
+/// Search the web using the specified provider.
 #[tauri::command]
-pub fn web_search(query: String) -> Result<Vec<serde_json::Value>, String> {
-    let client = make_client()?;
-
-    if let Some(key) = read_brave_api_key() {
-        let results = search_brave(&client, &query, &key);
-        if !results.is_empty() { return Ok(results); }
+pub fn web_search(query: String, provider: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    match provider.as_deref() {
+        Some("ollama") => {
+            let key = read_ollama_api_key()
+                .ok_or_else(|| "ollama_cloud_api_key not configured".to_string())?;
+            search_ollama(&query, &key)
+        }
+        Some("brave") => {
+            let client = make_client()?;
+            let key = read_brave_api_key()
+                .ok_or_else(|| "brave_search_api_key not configured".to_string())?;
+            Ok(search_brave(&client, &query, &key))
+        }
+        _ => Err("no_provider".to_string()),
     }
-
-    let results = search_ddg(&client, &query);
-    if !results.is_empty() { return Ok(results); }
-
-    let results = search_ddg_lite(&client, &query);
-    if !results.is_empty() { return Ok(results); }
-
-    let results = search_bing(&client, &query);
-    if !results.is_empty() { return Ok(results); }
-
-    eprintln!("[web_search] all strategies exhausted for query={:?}", query);
-    Ok(vec![])
 }
 
 /// Fetch a URL and return its text content.
@@ -226,6 +125,8 @@ pub fn web_search(query: String) -> Result<Vec<serde_json::Value>, String> {
 /// HTML responses are stripped down to readable text via semantic selectors.
 #[tauri::command]
 pub fn web_fetch(url: String) -> Result<String, String> {
+    use scraper::{Html, Selector};
+
     let client = make_client()?;
     let resp = client
         .get(&url)
