@@ -1,13 +1,13 @@
-fn read_config_key(field: &str) -> Option<String> {
-    let path = dirs_next::home_dir()?.join(".local-assistant").join("config.json");
+fn read_config_key(field: &str, app: &tauri::AppHandle) -> Option<String> {
+    let path = crate::commands::fs_ops::app_data_dir(app).join("config.json");
     let raw = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let key = json.get(field)?.as_str()?.trim().to_string();
     if key.is_empty() { None } else { Some(key) }
 }
 
-fn read_brave_api_key() -> Option<String> { read_config_key("brave_search_api_key") }
-fn read_ollama_api_key() -> Option<String> { read_config_key("ollama_cloud_api_key") }
+fn read_brave_api_key(app: &tauri::AppHandle) -> Option<String> { read_config_key("brave_search_api_key", app) }
+fn read_ollama_api_key(app: &tauri::AppHandle) -> Option<String> { read_config_key("ollama_cloud_api_key", app) }
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -103,16 +103,16 @@ fn search_ollama(query: &str, api_key: &str) -> Result<Vec<serde_json::Value>, S
 
 /// Search the web using the specified provider.
 #[tauri::command]
-pub fn web_search(query: String, provider: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+pub fn web_search(query: String, provider: Option<String>, app_handle: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
     match provider.as_deref() {
         Some("ollama") => {
-            let key = read_ollama_api_key()
+            let key = read_ollama_api_key(&app_handle)
                 .ok_or_else(|| "ollama_cloud_api_key not configured".to_string())?;
             search_ollama(&query, &key)
         }
         Some("brave") => {
             let client = make_client()?;
-            let key = read_brave_api_key()
+            let key = read_brave_api_key(&app_handle)
                 .ok_or_else(|| "brave_search_api_key not configured".to_string())?;
             Ok(search_brave(&client, &query, &key))
         }

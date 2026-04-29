@@ -10,11 +10,8 @@ pub struct SkillMeta {
     pub path: String,
 }
 
-fn skills_dir() -> PathBuf {
-    dirs_next::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".local-assistant")
-        .join("skills")
+fn skills_dir(app: &tauri::AppHandle) -> PathBuf {
+    crate::commands::fs_ops::app_data_dir(app).join("skills")
 }
 
 fn parse_frontmatter_field(content: &str, field: &str) -> Option<String> {
@@ -41,8 +38,8 @@ fn extract_frontmatter(content: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn list_skills() -> Vec<SkillMeta> {
-    let dir = skills_dir();
+pub async fn list_skills(app_handle: tauri::AppHandle) -> Vec<SkillMeta> {
+    let dir = skills_dir(&app_handle);
     let mut skills = Vec::new();
 
     if !dir.exists() {

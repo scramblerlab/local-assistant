@@ -1,8 +1,8 @@
 mod commands;
 
 use commands::{cloud, fs_ops, mcp, ollama_check, skills, web};
-use tauri::Manager;
 use std::path::PathBuf;
+use tauri::Manager;
 
 fn copy_dir_all(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
@@ -20,8 +20,7 @@ fn copy_dir_all(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
 }
 
 fn setup_user_data(app: &tauri::App) {
-    let home = dirs_next::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let skills_dir = home.join(".local-assistant").join("skills");
+    let skills_dir = commands::fs_ops::app_data_dir(&app.app_handle()).join("skills");
     let _ = std::fs::create_dir_all(&skills_dir);
 
     // Copy bundled skill-creator on first launch
