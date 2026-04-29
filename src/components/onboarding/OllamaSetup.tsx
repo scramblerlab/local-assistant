@@ -58,7 +58,7 @@ export function OllamaSetup({ status, onRetry, onStart }: Props) {
         color: "var(--color-accent)",
         lineHeight: 1,
       }}>
-        LOCAL ASSISTANT
+        GENERATIVE ASSISTANT
       </div>
 
       {status === "not_installed" && (
