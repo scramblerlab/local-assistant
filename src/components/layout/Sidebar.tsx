@@ -120,7 +120,7 @@ function ContextUsageBar({ model }: { model: string }) {
 type Section = "models" | "cloud" | "skills" | "mcp" | "search" | null;
 
 export function Sidebar({ ollamaStatus }: Props) {
-  const [open, setOpen] = useState<Section>("models");
+  const [open, setOpen] = useState<Section>(null);
   const { activeModel } = useActiveModel();
   const { loading: mcpLoading, reload: mcpReload } = useMcpStore();
 
