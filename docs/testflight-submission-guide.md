@@ -297,6 +297,42 @@ For each new build:
 
 ---
 
+## App Sandbox Limitations and the Developer ID Route
+
+### MCP stdio servers don't work under App Sandbox
+
+MCP servers configured in `config.json` use `Command::spawn()` to launch external processes (e.g. `npx`, `node`). App Sandbox blocks spawning arbitrary executables outside the app bundle, so MCP servers silently fail to start in TestFlight / App Store builds.
+
+Options if you need MCP support:
+
+1. **HTTP/SSE-based MCP only** — support MCP servers that expose an HTTP endpoint instead of stdio. No subprocess spawning required, fully sandbox-compatible.
+2. **Developer ID distribution** — sign and distribute outside the App Store (see below). No sandbox required, full MCP support.
+3. **Disable MCP in sandboxed builds** — detect sandbox at runtime and hide MCP config from the UI.
+
+### Developer ID distribution (direct install, no App Store)
+
+Developer ID lets users drag your `.app` directly to their Applications folder without going through the App Store or TestFlight. There is no App Sandbox requirement, so subprocess-based MCP works normally.
+
+The trade-offs vs App Store / TestFlight:
+
+| | App Store / TestFlight | Developer ID |
+|---|---|---|
+| Certificate | 3rd Party Mac Developer Application | Developer ID Application |
+| Sandbox | Required | Optional |
+| Notarization | Apple handles it | You run `xcrun notarytool` |
+| MCP subprocess spawning | Blocked | Works |
+| Copying .app directly to /Applications | Won't launch (wrong cert) | Works |
+| Distribution | TestFlight / App Store listing | Direct download / your own website |
+
+To set up Developer ID distribution:
+1. Create a **Developer ID Application** certificate in developer.apple.com (separate from Mac App Distribution)
+2. Sign with `--sign "Developer ID Application: Your Name (TEAMID)"` — no provisioning profile needed
+3. Notarize: `xcrun notarytool submit app.zip --apple-id ... --team-id ... --password ...`
+4. Staple: `xcrun stapler staple "Generative Assistant.app"`
+5. Distribute the `.app` directly (zip, dmg, or your own installer)
+
+---
+
 ## Useful Links
 
 - [App Store Connect](https://appstoreconnect.apple.com)

@@ -14,11 +14,8 @@ pub struct McpHandle {
     pub tools: Vec<Value>,
 }
 
-fn read_mcp_configs() -> Vec<(String, String, Vec<String>)> {
-    let path = match dirs_next::home_dir() {
-        Some(h) => h.join(".local-assistant").join("config.json"),
-        None => return vec![],
-    };
+fn read_mcp_configs(config_path: std::path::PathBuf) -> Vec<(String, String, Vec<String>)> {
+    let path = config_path;
     let raw = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(_) => return vec![],
@@ -125,8 +122,8 @@ fn start_server(id: &str, command: &str, args: &[String]) -> Result<McpHandle, S
     Ok(handle)
 }
 
-fn start_all_inner(handles: &mut std::collections::HashMap<String, McpHandle>) -> Vec<Value> {
-    let configs = read_mcp_configs();
+fn start_all_inner(handles: &mut std::collections::HashMap<String, McpHandle>, config_path: std::path::PathBuf) -> Vec<Value> {
+    let configs = read_mcp_configs(config_path);
     let mut summaries = Vec::new();
     for (id, command, args) in configs {
         if handles.contains_key(&id) {
@@ -147,16 +144,18 @@ fn start_all_inner(handles: &mut std::collections::HashMap<String, McpHandle>) -
 }
 
 #[tauri::command]
-pub fn mcp_start_all(state: tauri::State<'_, McpManager>) -> Result<Vec<Value>, String> {
+pub fn mcp_start_all(state: tauri::State<'_, McpManager>, app_handle: tauri::AppHandle) -> Result<Vec<Value>, String> {
+    let config_path = crate::commands::fs_ops::app_data_dir(&app_handle).join("config.json");
     let mut handles = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(start_all_inner(&mut handles))
+    Ok(start_all_inner(&mut handles, config_path))
 }
 
 #[tauri::command]
-pub fn mcp_reload_all(state: tauri::State<'_, McpManager>) -> Result<Vec<Value>, String> {
+pub fn mcp_reload_all(state: tauri::State<'_, McpManager>, app_handle: tauri::AppHandle) -> Result<Vec<Value>, String> {
+    let config_path = crate::commands::fs_ops::app_data_dir(&app_handle).join("config.json");
     let mut handles = state.0.lock().map_err(|e| e.to_string())?;
-    handles.clear(); // drops all McpHandles, closing their stdin pipes → child exits
-    Ok(start_all_inner(&mut handles))
+    handles.clear();
+    Ok(start_all_inner(&mut handles, config_path))
 }
 
 #[tauri::command]
