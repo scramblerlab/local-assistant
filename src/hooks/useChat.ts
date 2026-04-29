@@ -25,13 +25,17 @@ const BASE_SYSTEM_PROMPT = `You are a helpful local AI assistant. Be concise and
 
 ## Web & File Tools
 
-You have tools available. Emit ONLY the tag below on its own line — the app executes it and returns the result.
+You have tools available. To use one, emit the tag on its own line — the app intercepts it, executes it, and returns the result. Replace placeholder values with real ones; never emit the examples verbatim.
 
 ### Search the web
+\`\`\`
 <tool_call>{"name": "web_search", "args": {"query": "search terms here"}}</tool_call>
+\`\`\`
 
 ### Fetch a URL
+\`\`\`
 <tool_call>{"name": "web_fetch", "args": {"url": "https://example.com/page"}}</tool_call>
+\`\`\`
 
 ### Write a file
 <write_file path="~/.local-assistant/skills/my-skill/SKILL.md">
@@ -39,8 +43,10 @@ file content goes here — no escaping needed
 </write_file>
 
 ### Read a file / list a directory
+\`\`\`
 <tool_call>{"name": "read_file", "args": {"path": "~/some/file.txt"}}</tool_call>
 <tool_call>{"name": "list_dir", "args": {"path": "~/.local-assistant/skills"}}</tool_call>
+\`\`\`
 
 ### Rules
 - For current information (news, weather, prices, recent events), use web_search first. Note: web_search requires a provider (Ollama or Brave) to be selected in the Web Search section of the sidebar.
@@ -71,7 +77,7 @@ The skill appears in the sidebar immediately and is always active.
 You can create skill files directly using the write_file tool.
 
 ### Add an MCP Server
-This app (Local Assistant) loads MCP servers from exactly one file: \`~/.local-assistant/config.json\`.
+This app (Generative Assistant) loads MCP servers from exactly one file: \`~/.local-assistant/config.json\`.
 There is no other config location. The format is fixed — do not invent key names.
 
 When a user asks how to add an MCP server, give them these exact steps:
@@ -158,6 +164,19 @@ function buildSystemPrompt(
 
 const MAX_TOOL_ROUNDS = 8;
 const TOOL_TIMEOUT_MS = 15_000;
+const MAX_RESULT_CHARS = 6_000;
+
+// Placeholder arg values that appear in system-prompt examples — never execute these
+const PLACEHOLDER_ARGS = new Set([
+  "search terms here",
+  "https://example.com/page",
+  "~/some/file.txt",
+  "~/.local-assistant/skills",
+]);
+
+function isPlaceholderArg(v: string): boolean {
+  return PLACEHOLDER_ARGS.has(v) || (v.startsWith("<") && v.endsWith(">"));
+}
 
 async function executeTool(name: string, args: Record<string, string>): Promise<string> {
   if (name === "web_search") {
@@ -193,6 +212,11 @@ async function executeTool(name: string, args: Record<string, string>): Promise<
     return callMcpTool(serverId, toolName, args as Record<string, unknown>);
   }
   return `Unknown tool: ${name}`;
+}
+
+function truncateResult(result: string): string {
+  if (result.length <= MAX_RESULT_CHARS) return result;
+  return result.slice(0, MAX_RESULT_CHARS) + "\n…[result truncated]";
 }
 
 export function useChat(model: string) {
@@ -276,6 +300,7 @@ export function useChat(model: string) {
           // Snapshot segment count before this round streams anything
           const segsBefore = useChatStore.getState().turns.find((t) => t.id === tId)?.segments.length ?? 0;
           let responseText = "";
+          let finalText = ""; // non-thinking content only — used for tool extraction
 
           const streamGen = isCloudModel && cloudApiKey
             ? cloudChatStream(model, conversationMessages, cloudApiKey, ac.signal)
@@ -287,15 +312,22 @@ export function useChat(model: string) {
             if (parsed.kind === "done") break;
             if (parsed.delta) {
               responseText += parsed.delta;
+              if (parsed.kind === "final") finalText += parsed.delta;
               appendToSegment(tId, parsed.kind as "thinking" | "final", parsed.delta);
             }
           }
 
-          const toolCalls = extractToolCalls(responseText);
+          // Extract tool calls from final content only; filter placeholders and deduplicate
+          const seen = new Set<string>();
+          const toolCalls = extractToolCalls(finalText).filter((tc) => {
+            if (Object.values(tc.args).some(isPlaceholderArg)) return false;
+            const key = `${tc.name}:${JSON.stringify(tc.args)}`;
+            return seen.has(key) ? false : (seen.add(key), true);
+          });
           if (toolCalls.length === 0) break;
 
           // Clean preamble text (everything before the first <tool_call>)
-          const preamble = stripToolCalls(responseText);
+          const preamble = stripToolCalls(finalText);
           const cleanedSegments: MessageSegment[] = preamble.trim()
             ? [{ id: crypto.randomUUID(), kind: "final", content: preamble }]
             : [];
@@ -310,12 +342,12 @@ export function useChat(model: string) {
             addSegment(tId, "tool-use", toolKey);
             let result: string;
             try {
-              result = await Promise.race([
+              result = truncateResult(await Promise.race([
                 executeTool(toolCall.name, toolCall.args),
                 new Promise<string>((_, reject) =>
                   setTimeout(() => reject(new Error("Timed out")), TOOL_TIMEOUT_MS)
                 ),
-              ]);
+              ]));
             } catch (err) {
               result = `Error: ${err instanceof Error ? err.message : String(err)}`;
             }
