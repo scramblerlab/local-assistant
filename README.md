@@ -1,4 +1,4 @@
-# Local Assistant
+# Generative Assistant
 
 A standalone Mac desktop AI assistant built on [Ollama](https://ollama.com). Run models locally for full privacy, or connect to Ollama Cloud for access to hosted models — your choice.
 

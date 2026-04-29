@@ -32,7 +32,7 @@ export function MessageList({ turns }: Props) {
           marginBottom: 8,
           lineHeight: 1,
         }}>
-          LOCAL ASSISTANT
+          GENERATIVE ASSISTANT
         </div>
         <p style={{
           fontSize: 13,

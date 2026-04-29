@@ -145,7 +145,7 @@ export function Sidebar({ ollamaStatus }: Props) {
           color: "var(--color-accent)",
           lineHeight: 1,
         }}>
-          LOCAL ASSISTANT
+          GENERATIVE ASSISTANT
         </div>
         <div style={{
           display: "flex",
@@ -170,11 +170,11 @@ export function Sidebar({ ollamaStatus }: Props) {
             alignItems: "center",
             gap: 5,
             padding: "4px 10px",
-            border: "1.5px solid var(--color-border-2)",
+            border: "1.5px solid var(--color-accent)",
             borderRadius: "var(--radius-pill)",
             background: "var(--color-surface-2)",
           }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-dim)", letterSpacing: "0.5px", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--color-accent)", letterSpacing: "0.5px", textTransform: "uppercase", fontFamily: "var(--font-mono)" }}>
               {activeModel}
             </span>
           </div>
