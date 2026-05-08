@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { listModels, deleteModel, getModelCapabilities, listCloudModels, getCloudModelCapabilities } from "../services/ollama";
 import { useModelStore } from "../stores/modelStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import type { OllamaModel } from "../types/ollama";
 
 export function useInstalledModels() {
@@ -22,38 +23,14 @@ export function useDeleteModel() {
 }
 
 export function useSearchConfig() {
-  return useQuery({
-    queryKey: ["search-config"],
-    queryFn: async (): Promise<{ ollamaKey: string | null; braveKey: string | null }> => {
-      try {
-        const raw = await invoke<string>("read_file", { path: "~/.local-assistant/config.json" });
-        const parsed = JSON.parse(raw);
-        const ollamaKey = (parsed?.ollama_cloud_api_key as string | undefined)?.trim() || null;
-        const braveKey = (parsed?.brave_search_api_key as string | undefined)?.trim() || null;
-        return { ollamaKey: ollamaKey || null, braveKey: braveKey || null };
-      } catch {
-        return { ollamaKey: null, braveKey: null };
-      }
-    },
-    staleTime: Infinity,
-  });
+  const ollamaApiKey = useSettingsStore((s) => s.ollamaApiKey);
+  const braveApiKey = useSettingsStore((s) => s.braveApiKey);
+  return { data: { ollamaKey: ollamaApiKey || null, braveKey: braveApiKey || null } };
 }
 
 export function useCloudConfig() {
-  return useQuery({
-    queryKey: ["cloud-config"],
-    queryFn: async (): Promise<{ apiKey: string | null }> => {
-      try {
-        const raw = await invoke<string>("read_file", { path: "~/.local-assistant/config.json" });
-        const parsed = JSON.parse(raw);
-        const key = (parsed?.ollama_cloud_api_key as string | undefined)?.trim() ?? "";
-        return { apiKey: key || null };
-      } catch {
-        return { apiKey: null };
-      }
-    },
-    staleTime: Infinity,
-  });
+  const ollamaApiKey = useSettingsStore((s) => s.ollamaApiKey);
+  return { data: { apiKey: ollamaApiKey || null } };
 }
 
 export function useCloudModels() {

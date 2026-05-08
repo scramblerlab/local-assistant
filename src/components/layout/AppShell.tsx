@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { ChatView } from "../chat/ChatView";
 import { OllamaSetup } from "../onboarding/OllamaSetup";
 import { useActiveModel } from "../../hooks/useModels";
+import { FilePermissionDialog } from "../permissions/FilePermissionDialog";
 
 interface Props {
   ollamaStatus: OllamaStatus;
@@ -76,6 +77,7 @@ export function AppShell({ ollamaStatus, onRetry, onStart }: Props) {
           <OllamaSetup status={ollamaStatus} onRetry={onRetry} onStart={onStart} />
         )}
       </main>
+      <FilePermissionDialog />
     </div>
   );
 }

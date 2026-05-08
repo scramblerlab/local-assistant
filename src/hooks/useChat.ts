@@ -8,6 +8,7 @@ import { saveSession } from "../services/sessions";
 import { webSearch, webFetch } from "../services/webTools";
 import { callMcpTool } from "../services/mcp";
 import { useMcpStore } from "../stores/mcpStore";
+import { usePermissionStore } from "../stores/permissionStore";
 import { extractToolCalls, stripToolCalls } from "../utils/toolParser";
 import { useChatStore } from "../stores/chatStore";
 import { useSkillStore } from "../stores/skillStore";
@@ -114,6 +115,100 @@ Add it to \`~/.local-assistant/config.json\`:
 \`\`\`
 The Cloud section in the sidebar will appear immediately and list available cloud models.`;
 
+const APP_INTERNAL_PREFIX = "~/.local-assistant";
+const FILE_OP_TOOLS = new Set([
+  "read_file", "write_file", "list_dir",
+  "create_dir", "rename_path", "delete_path",
+]);
+
+function operationLabel(name: string, args: Record<string, string>): string {
+  switch (name) {
+    case "read_file":   return `read file: ${args.path ?? ""}`;
+    case "list_dir":    return `list directory: ${args.path ?? ""}`;
+    case "write_file":  return `write file: ${args.path ?? ""}`;
+    case "create_dir":  return `create directory: ${args.path ?? ""}`;
+    case "rename_path": return `rename ${args.from ?? ""} → ${args.to ?? ""}`;
+    case "delete_path": return `delete: ${args.path ?? ""}`;
+    default:            return name;
+  }
+}
+
+async function checkPermissionForOp(
+  name: string,
+  args: Record<string, string>,
+): Promise<boolean> {
+  const { isApproved, requestPermission, homeDir, approvedFolders } = usePermissionStore.getState();
+  console.log("[checkPermission] tool:", name, "args:", args, "homeDir:", homeDir, "approvedFolders:", approvedFolders);
+
+  const paths: string[] = [];
+  if (name === "rename_path") {
+    if (args.from) paths.push(args.from);
+    if (args.to) paths.push(args.to);
+  } else {
+    const p = args.path ?? "";
+    if (p) paths.push(p);
+  }
+
+  for (const path of paths) {
+    // Always allow internal app paths
+    if (path.startsWith(APP_INTERNAL_PREFIX)) {
+      console.log("[checkPermission] allowing internal path:", path);
+      continue;
+    }
+
+    // In-memory check (zero IPC latency for already-approved paths)
+    const absPath =
+      path.startsWith("~/") ? (homeDir ? homeDir + path.slice(1) : path) : path;
+    console.log("[checkPermission] checking path:", path, "absPath:", absPath, "isApproved(abs):", isApproved(absPath), "isApproved(tilde):", isApproved(path));
+    if (isApproved(absPath) || isApproved(path)) {
+      console.log("[checkPermission] path already approved, skipping dialog");
+      continue;
+    }
+
+    console.log("[checkPermission] requesting permission for:", path);
+    const granted = await requestPermission(path, operationLabel(name, args));
+    console.log("[checkPermission] permission result:", granted);
+    if (!granted) return false;
+  }
+  return true;
+}
+
+function buildFilePermissionsSection(approvedFolders: string[]): string {
+  const folderList =
+    approvedFolders.length > 0
+      ? approvedFolders.map((f) => `- \`${f}\``).join("\n")
+      : "- *(none yet — a permission dialog will appear when you access any folder)*";
+
+  return `\n\n## File & Directory Operations
+
+You have access to these file operation tools:
+
+### Create a directory
+\`\`\`
+<tool_call>{"name": "create_dir", "args": {"path": "~/path/to/new-dir"}}</tool_call>
+\`\`\`
+
+### Rename or move a file/directory
+\`\`\`
+<tool_call>{"name": "rename_path", "args": {"from": "~/old/path", "to": "~/new/path"}}</tool_call>
+\`\`\`
+
+### Delete a file or directory
+\`\`\`
+<tool_call>{"name": "delete_path", "args": {"path": "~/path/to/remove"}}</tool_call>
+\`\`\`
+
+### Currently approved folders (and all their subfolders)
+${folderList}
+
+### Rules
+- \`~/.local-assistant/\` is always accessible — no permission required.
+- For all other folders, a permission dialog appears automatically when you first access them. You do not need to ask the user in chat — just use the tool.
+- Paths outside the user's home directory (\`~/\`) require two confirmations and are never saved to the permission list.
+- All write, create, rename, and delete operations are verified server-side after execution. You will receive an error message if verification fails.
+- After any destructive operation (delete, rename, overwrite), confirm with the user before proceeding if the action was not explicitly requested.`;
+}
+
 function buildMcpSection(servers: McpServerSummary[]): string {
   if (servers.length === 0) return "";
   const parts = servers.map((server) => {
@@ -137,6 +232,7 @@ function buildSystemPrompt(
   availableSkills: SkillMeta[],
   activeSkills: ReturnType<typeof useSkillStore.getState>["active"],
   mcpServers: McpServerSummary[],
+  approvedFolders: string[],
 ): string {
   let prompt = BASE_SYSTEM_PROMPT;
 
@@ -157,6 +253,7 @@ function buildSystemPrompt(
     prompt += `\n\n# Active Skills (full instructions loaded)\n\n${block}`;
   }
 
+  prompt += buildFilePermissionsSection(approvedFolders);
   prompt += buildMcpSection(mcpServers);
 
   return prompt;
@@ -204,6 +301,18 @@ async function executeTool(name: string, args: Record<string, string>): Promise<
   if (name === "list_dir") {
     const entries = await invoke<string[]>("list_dir", { path: args.path ?? "" });
     return entries.join("\n");
+  }
+  if (name === "create_dir") {
+    await invoke("create_dir", { path: args.path ?? "" });
+    return `Directory created: ${args.path}`;
+  }
+  if (name === "rename_path") {
+    await invoke("rename_path", { from: args.from ?? "", to: args.to ?? "" });
+    return `Renamed: ${args.from} → ${args.to}`;
+  }
+  if (name === "delete_path") {
+    await invoke("delete_path", { path: args.path ?? "" });
+    return `Deleted: ${args.path}`;
   }
   if (name.startsWith("mcp__")) {
     const parts = name.split("__");
@@ -275,7 +384,7 @@ export function useChat(model: string) {
       }
 
       // ── Normal message ─────────────────────────────────────────────────
-      const systemPrompt = buildSystemPrompt(availableSkills, activeSkills, useMcpStore.getState().servers);
+      const systemPrompt = buildSystemPrompt(availableSkills, activeSkills, useMcpStore.getState().servers, usePermissionStore.getState().approvedFolders);
       const messages = await buildMessages(systemPrompt, text);
 
       const tId = addTurn(text, model, images.length > 0 ? images : undefined);
@@ -342,6 +451,18 @@ export function useChat(model: string) {
             addSegment(tId, "tool-use", toolKey);
             let result: string;
             try {
+              // Permission check is OUTSIDE the timeout race — it waits indefinitely
+              // for the user to click Allow/Deny in the dialog.
+              if (FILE_OP_TOOLS.has(toolCall.name)) {
+                const allowed = await checkPermissionForOp(toolCall.name, toolCall.args);
+                if (!allowed) {
+                  result = "Permission denied: the user did not grant access to the requested path.";
+                  addSegment(tId, "tool-use", `done:${toolKey}`);
+                  toolResults.push(`[${toolCall.name}]\n${result}`);
+                  continue;
+                }
+              }
+              // Actual I/O is inside the timeout race
               result = truncateResult(await Promise.race([
                 executeTool(toolCall.name, toolCall.args),
                 new Promise<string>((_, reject) =>
