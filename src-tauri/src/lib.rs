@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{cloud, fs_ops, mcp, ollama_check, skills, web};
+use commands::{cloud, fs_ops, mcp, ollama_check, permissions, skills, web};
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -54,6 +54,14 @@ pub fn run() {
             fs_ops::read_file,
             fs_ops::write_file,
             fs_ops::list_dir,
+            fs_ops::get_home_dir,
+            fs_ops::create_dir,
+            fs_ops::rename_path,
+            fs_ops::delete_path,
+            permissions::get_file_permissions,
+            permissions::add_file_permission,
+            permissions::remove_file_permission,
+            permissions::check_file_permission,
             ollama_check::check_ollama_installed,
             ollama_check::start_ollama_server,
             ollama_check::open_ollama_download,

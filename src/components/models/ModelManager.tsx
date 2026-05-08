@@ -172,7 +172,7 @@ export function CloudPanel() {
   if (!apiKey) {
     return (
       <p style={{ padding: "4px 18px 8px", fontSize: 11, color: "var(--color-text-muted)", lineHeight: 1.5 }}>
-        Add <code style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>ollama_cloud_api_key</code> to config.json to enable
+        Open Settings → API Keys to add an Ollama Cloud API key.
       </p>
     );
   }

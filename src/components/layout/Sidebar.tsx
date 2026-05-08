@@ -6,6 +6,7 @@ import { ModelManager, CloudPanel } from "../models/ModelManager";
 import { SkillPanel } from "../skills/SkillPanel";
 import { McpPanel } from "../mcp/McpPanel";
 import { SearchPanel } from "../search/SearchPanel";
+import { SettingsPanel } from "../settings/SettingsPanel";
 import { useMcpStore } from "../../stores/mcpStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useModelStore } from "../../stores/modelStore";
@@ -117,7 +118,7 @@ function ContextUsageBar({ model }: { model: string }) {
   );
 }
 
-type Section = "models" | "cloud" | "skills" | "mcp" | "search" | null;
+type Section = "models" | "cloud" | "skills" | "mcp" | "search" | "settings" | null;
 
 export function Sidebar({ ollamaStatus }: Props) {
   const [open, setOpen] = useState<Section>(null);
@@ -326,7 +327,31 @@ export function Sidebar({ ollamaStatus }: Props) {
             {open === "search" ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
             Web Search
           </button>
-          {open === "search" && <SearchPanel />}
+          {open === "search" && <SearchPanel onOpenSettings={() => setOpen("settings")} />}
+        </div>
+
+        {/* Settings section */}
+        <div style={{ marginTop: 2 }}>
+          <button onClick={() => toggle("settings")} style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "10px 18px",
+            background: "none",
+            border: "none",
+            color: open === "settings" ? "var(--color-text-primary)" : "var(--color-text-muted)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.8px",
+            textTransform: "uppercase",
+            fontFamily: "var(--font-sans)",
+            transition: "color 0.15s",
+          }}>
+            {open === "settings" ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+            Settings
+          </button>
+          {open === "settings" && <SettingsPanel />}
         </div>
       </div>
 
