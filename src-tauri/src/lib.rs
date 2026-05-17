@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{cloud, fs_ops, mcp, ollama_check, permissions, skills, web};
+use commands::{cloud, fs_ops, gmail, mcp, ollama_check, permissions, skills, web};
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -75,6 +75,13 @@ pub fn run() {
             cloud::cloud_get_capabilities,
             cloud::cloud_get_context_length,
             cloud::cloud_chat_stream,
+            gmail::gmail_has_keys,
+            gmail::gmail_list_accounts,
+            gmail::gmail_save_keys,
+            gmail::gmail_add_account,
+            gmail::gmail_switch_account,
+            gmail::gmail_remove_account,
+            gmail::gmail_ensure_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

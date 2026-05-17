@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Globe, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Globe, Mail, Search } from "lucide-react";
 import type { MessageSegment as Seg } from "../../types/chat";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
@@ -50,6 +50,35 @@ export function MessageSegment({ segment }: Props) {
     const colonIdx = body.indexOf(":");
     const toolName = colonIdx >= 0 ? body.slice(0, colonIdx) : body;
     const arg = colonIdx >= 0 ? body.slice(colonIdx + 1) : "";
+
+    if (toolName.startsWith("mcp__gmail__")) {
+      const op = toolName.replace("mcp__gmail__", "");
+      const gmailLabel = (() => {
+        if (op === "search_emails") return isDone ? `Searched Gmail: ${arg}` : `Searching Gmail: ${arg}`;
+        if (op === "read_email" || op === "get_email") return isDone ? "Read email" : "Reading email…";
+        if (op === "send_email") return isDone ? "Email sent" : "Sending email…";
+        if (op === "draft_email") return isDone ? "Draft saved" : "Drafting email…";
+        if (op === "download_attachment") return isDone ? "Attachment downloaded" : "Downloading attachment…";
+        return isDone ? "Accessed Gmail" : "Accessing Gmail…";
+      })();
+      return (
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "4px 10px", marginBottom: 4,
+          background: isDone ? "rgba(59,130,246,0.10)" : "rgba(59,130,246,0.18)",
+          border: `1.5px solid ${isDone ? "#3b82f6" : "#60a5fa"}`,
+          borderRadius: "var(--radius-pill)",
+          fontSize: 11,
+          color: isDone ? "#3b82f6" : "#93c5fd",
+          fontWeight: 600, letterSpacing: "0.5px",
+          animation: isDone ? undefined : "dot-pulse 1.4s ease-in-out infinite",
+        }}>
+          <Mail size={11} />
+          {gmailLabel}
+        </div>
+      );
+    }
+
     const isSearch = toolName === "web_search";
     const Icon = isSearch ? Search : Globe;
     const label = isDone
