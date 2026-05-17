@@ -36,3 +36,6 @@ npm-debug.log*
 
 # TypeScript
 *.tsbuildinfo
+
+# Gmail OAuth client credentials (bundled in app, never committed)
+credentials/

@@ -35,7 +35,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../skills": "skills"
+      "../skills": "skills",
+      "../credentials/gcp-oauth.keys.json": "gcp-oauth.keys.json"
     },
     "macOS": {
       "signingIdentity": "3rd Party Mac Developer Application: Nobuyuki Hayashi (GXWN8P2ZSF)",

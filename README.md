@@ -175,6 +175,42 @@ MCP servers extend the model with external tools (file systems, APIs, databases,
 
 The **MCP** section in the sidebar lists each server's status and available tools. Use the reload button (↺) to restart all servers after a config change.
 
+## Gmail Integration
+
+The app can read, search, send, and draft Gmail messages via the [`@gongrzhe/server-gmail-autoauth-mcp`](https://www.npmjs.com/package/@gongrzhe/server-gmail-autoauth-mcp) MCP server. The OAuth client credential is bundled in the app — users only need to authorize their own Google account.
+
+### For users
+
+1. Open **Settings → Integrations → Gmail**
+2. Click **Connect Gmail** and enter your Gmail address
+3. A browser window opens — sign in with Google and click Allow
+4. Done. Ask the AI to search or read your email
+
+> **Note:** The app uses a shared Google Cloud project in Testing mode. Your Gmail address must be registered as a test user by the developer before you can authorize. Contact the developer to be added.
+
+### For developers / contributors
+
+The bundled OAuth client credential (`credentials/gcp-oauth.keys.json`) is gitignored and must be placed manually before building. Without it, the app bundle will still work if the user already has `~/.gmail-mcp/gcp-oauth.keys.json` from a prior setup, but a fresh install will have no Gmail capability.
+
+#### Setting up your own Google Cloud credential
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) and create a project
+2. Enable the **Gmail API** — [APIs & Services → Library → Gmail API → Enable](https://console.cloud.google.com/apis/library/gmail.googleapis.com)
+3. Configure the consent screen — [Auth → Branding](https://console.cloud.google.com/auth/branding): set app name, User Type = External
+4. Add test users — [Auth → Audience](https://console.cloud.google.com/auth/audience): add every Gmail address that will use the app
+5. Create credentials — [Auth → Clients](https://console.cloud.google.com/auth/clients): **Create client → Desktop app** → Download JSON
+6. Place the downloaded file at:
+
+```
+credentials/gcp-oauth.keys.json   # project root, gitignored
+```
+
+The app copies this file to `~/.gmail-mcp/gcp-oauth.keys.json` on first launch automatically.
+
+#### Publishing the consent screen
+
+The app currently runs in **Testing** mode (max 100 test users, tokens expire in 7 days). To support unlimited users without expiry, publish the consent screen via [Auth → Audience → Publish App](https://console.cloud.google.com/auth/audience). Google may require a review if sensitive scopes are used.
+
 ## Tech Stack
 
 | Layer | Technology |

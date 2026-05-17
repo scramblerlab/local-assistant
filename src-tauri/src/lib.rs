@@ -3,6 +3,7 @@ mod commands;
 use commands::{cloud, fs_ops, gmail, mcp, ollama_check, permissions, skills, web};
 use std::path::PathBuf;
 use tauri::Manager;
+extern crate dirs_next;
 
 fn copy_dir_all(src: &PathBuf, dst: &PathBuf) -> std::io::Result<()> {
     std::fs::create_dir_all(dst)?;
@@ -30,6 +31,21 @@ fn setup_user_data(app: &tauri::App) {
             let skill_creator_src = resource_dir.join("skills").join("skill-creator");
             if skill_creator_src.exists() {
                 let _ = copy_dir_all(&skill_creator_src, &skill_creator_dst);
+            }
+        }
+    }
+
+    // Copy bundled Gmail OAuth keys on first launch if user doesn't have their own
+    if let Some(home) = dirs_next::home_dir() {
+        let gmail_dir = home.join(".gmail-mcp");
+        let keys_dst = gmail_dir.join("gcp-oauth.keys.json");
+        if !keys_dst.exists() {
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let keys_src = resource_dir.join("gcp-oauth.keys.json");
+                if keys_src.exists() {
+                    let _ = std::fs::create_dir_all(&gmail_dir);
+                    let _ = std::fs::copy(&keys_src, &keys_dst);
+                }
             }
         }
     }
